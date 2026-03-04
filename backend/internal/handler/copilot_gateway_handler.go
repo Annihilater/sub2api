@@ -321,9 +321,18 @@ func (h *CopilotGatewayHandler) Messages(c *gin.Context) {
 	}
 	reqModel := modelResult.String()
 	reqStream := gjson.GetBytes(body, "stream").Bool()
+	reqMaxTokens := int(gjson.GetBytes(body, "max_tokens").Int())
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 
 	setOpsRequestContext(c, reqModel, reqStream, body)
+
+	// Intercept Claude Code probe requests (max_tokens=1 + haiku model, non-streaming).
+	// Claude Code sends these to validate API connectivity; respond locally without hitting upstream.
+	if isMaxTokensOneHaikuRequest(reqModel, reqMaxTokens, reqStream) {
+		reqLog.Debug("copilot.messages.probe_intercept", zap.String("model", reqModel))
+		sendMockInterceptResponse(c, reqModel, InterceptTypeMaxTokensOneHaiku)
+		return
+	}
 
 	// Check billing eligibility.
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
