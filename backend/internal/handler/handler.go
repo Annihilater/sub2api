@@ -16,6 +16,7 @@ type AdminHandlers struct {
 	OpenAIOAuth      *admin.OpenAIOAuthHandler
 	GeminiOAuth      *admin.GeminiOAuthHandler
 	AntigravityOAuth *admin.AntigravityOAuthHandler
+	CopilotOAuth     *admin.CopilotOAuthHandler
 	Proxy            *admin.ProxyHandler
 	Redeem           *admin.RedeemHandler
 	Promo            *admin.PromoHandler
@@ -43,9 +44,10 @@ type Handlers struct {
 	Gateway       *GatewayHandler
 	OpenAIGateway *OpenAIGatewayHandler
 	SoraGateway   *SoraGatewayHandler
-	SoraClient    *SoraClientHandler
-	Setting       *SettingHandler
-	Totp          *TotpHandler
+	SoraClient      *SoraClientHandler
+	Setting         *SettingHandler
+	Totp            *TotpHandler
+	CopilotGateway  *CopilotGatewayHandler
 }
 
 // BuildInfo contains build-time information
