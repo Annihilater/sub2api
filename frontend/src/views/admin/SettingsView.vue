@@ -737,6 +737,34 @@
           </div>
         </div>
 
+        <!-- Gateway Scheduling Settings -->
+        <div class="card">
+          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.settings.scheduling.title') }}
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.settings.scheduling.description') }}
+            </p>
+          </div>
+          <div class="p-6">
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.scheduling.allowUngroupedKey') }}
+                </label>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.scheduling.allowUngroupedKeyHint') }}
+                </p>
+              </div>
+              <label class="toggle">
+                <input v-model="form.allow_ungrouped_key_scheduling" type="checkbox" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
         <!-- Site Settings -->
         <div class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
@@ -1335,9 +1363,11 @@ import Toggle from '@/components/common/Toggle.vue'
 import ImageUpload from '@/components/common/ImageUpload.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { useAppStore } from '@/stores'
+import { useAdminSettingsStore } from '@/stores/adminSettings'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const adminSettingsStore = useAdminSettingsStore()
 const { copyToClipboard } = useClipboard()
 
 const loading = ref(true)
@@ -1438,7 +1468,9 @@ const form = reactive<SettingsForm>({
   ops_query_mode_default: 'auto',
   ops_metrics_interval_seconds: 60,
   // Claude Code version check
-  min_claude_code_version: ''
+  min_claude_code_version: '',
+  // 分组隔离
+  allow_ungrouped_key_scheduling: false
 })
 
 const defaultSubscriptionGroupOptions = computed<DefaultSubscriptionGroupOption[]>(() =>
@@ -1623,15 +1655,17 @@ async function saveSettings() {
       fallback_model_antigravity: form.fallback_model_antigravity,
       enable_identity_patch: form.enable_identity_patch,
       identity_patch_prompt: form.identity_patch_prompt,
-      min_claude_code_version: form.min_claude_code_version
+      min_claude_code_version: form.min_claude_code_version,
+      allow_ungrouped_key_scheduling: form.allow_ungrouped_key_scheduling
     }
     const updated = await adminAPI.settings.updateSettings(payload)
     Object.assign(form, updated)
     form.smtp_password = ''
     form.turnstile_secret_key = ''
     form.linuxdo_connect_client_secret = ''
-    // Refresh cached public settings so sidebar/header update immediately
+    // Refresh cached settings so sidebar/header update immediately
     await appStore.fetchPublicSettings(true)
+    await adminSettingsStore.fetch(true)
     appStore.showSuccess(t('admin.settings.settingsSaved'))
   } catch (error: any) {
     appStore.showError(

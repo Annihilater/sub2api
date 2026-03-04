@@ -21,7 +21,11 @@ type apiKeyRepository struct {
 }
 
 func NewAPIKeyRepository(client *dbent.Client, sqlDB *sql.DB) service.APIKeyRepository {
-	return &apiKeyRepository{client: client, sql: sqlDB}
+	return newAPIKeyRepositoryWithSQL(client, sqlDB)
+}
+
+func newAPIKeyRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor) *apiKeyRepository {
+	return &apiKeyRepository{client: client, sql: sqlq}
 }
 
 func (r *apiKeyRepository) activeQuery() *dbent.APIKeyQuery {
@@ -277,8 +281,26 @@ func (r *apiKeyRepository) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (r *apiKeyRepository) ListByUserID(ctx context.Context, userID int64, params pagination.PaginationParams) ([]service.APIKey, *pagination.PaginationResult, error) {
+func (r *apiKeyRepository) ListByUserID(ctx context.Context, userID int64, params pagination.PaginationParams, filters service.APIKeyListFilters) ([]service.APIKey, *pagination.PaginationResult, error) {
 	q := r.activeQuery().Where(apikey.UserIDEQ(userID))
+
+	// Apply filters
+	if filters.Search != "" {
+		q = q.Where(apikey.Or(
+			apikey.NameContainsFold(filters.Search),
+			apikey.KeyContainsFold(filters.Search),
+		))
+	}
+	if filters.Status != "" {
+		q = q.Where(apikey.StatusEQ(filters.Status))
+	}
+	if filters.GroupID != nil {
+		if *filters.GroupID == 0 {
+			q = q.Where(apikey.GroupIDIsNil())
+		} else {
+			q = q.Where(apikey.GroupIDEQ(*filters.GroupID))
+		}
+	}
 
 	total, err := q.Count(ctx)
 	if err != nil {

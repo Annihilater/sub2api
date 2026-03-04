@@ -444,6 +444,9 @@ export default {
   keys: {
     title: 'API Keys',
     description: 'Manage your API keys and access tokens',
+    searchPlaceholder: 'Search name or key...',
+    allGroups: 'All Groups',
+    allStatus: 'All Status',
     createKey: 'Create API Key',
     editKey: 'Edit API Key',
     deleteKey: 'Delete API Key',
@@ -3590,6 +3593,12 @@ export default {
         minVersionPlaceholder: 'e.g. 2.1.63',
         minVersionHint:
           'Reject Claude Code clients below this version (semver format). Leave empty to disable version check.'
+      },
+      scheduling: {
+        title: 'Gateway Scheduling Settings',
+        description: 'Control API Key scheduling behavior',
+        allowUngroupedKey: 'Allow Ungrouped Key Scheduling',
+        allowUngroupedKeyHint: 'When disabled, API Keys not assigned to any group cannot make requests (403 Forbidden). Keep disabled to ensure all Keys belong to a specific group.'
       },
       site: {
         title: 'Site Settings',
