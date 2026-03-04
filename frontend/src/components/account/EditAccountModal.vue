@@ -26,8 +26,8 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
-      <!-- API Key fields (only for apikey type) -->
-      <div v-if="account.type === 'apikey'" class="space-y-4">
+      <!-- API Key fields (only for apikey type, except Copilot) -->
+      <div v-if="account.type === 'apikey' && account.platform !== 'copilot'" class="space-y-4">
         <div>
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
           <input
@@ -349,6 +349,30 @@
           </div>
         </div>
 
+      </div>
+
+      <!-- Copilot credential fields (apikey type, copilot platform) -->
+      <div v-if="account.type === 'apikey' && account.platform === 'copilot'" class="space-y-4">
+        <div>
+          <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
+          <input
+            v-model="editBaseUrl"
+            type="text"
+            class="input"
+            placeholder="https://api.individual.githubcopilot.com"
+          />
+          <p class="input-hint">{{ t('admin.accounts.copilot.baseUrlHint') }}</p>
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.accounts.copilot.githubToken') }}</label>
+          <input
+            v-model="editGithubToken"
+            type="password"
+            class="input font-mono"
+            placeholder="ghp_xxxxxxxxxxxx / github_pat_xxxxxxxxxxxx"
+          />
+          <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
+        </div>
       </div>
 
       <!-- Upstream fields (only for upstream type) -->
@@ -1310,6 +1334,7 @@ const baseUrlHint = computed(() => {
   if (!props.account) return t('admin.accounts.baseUrlHint')
   if (props.account.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
   if (props.account.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
+  if (props.account.platform === 'copilot') return t('admin.accounts.copilot.baseUrlHint')
   return t('admin.accounts.baseUrlHint')
 })
 
@@ -1332,6 +1357,7 @@ interface TempUnschedRuleForm {
 const submitting = ref(false)
 const editBaseUrl = ref('https://api.anthropic.com')
 const editApiKey = ref('')
+const editGithubToken = ref('')
 const modelMappings = ref<ModelMapping[]>([])
 const modelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
 const allowedModels = ref<string[]>([])
@@ -1450,6 +1476,7 @@ const tempUnschedPresets = computed(() => [
 const defaultBaseUrl = computed(() => {
   if (props.account?.platform === 'openai' || props.account?.platform === 'sora') return 'https://api.openai.com'
   if (props.account?.platform === 'gemini') return 'https://generativelanguage.googleapis.com'
+  if (props.account?.platform === 'copilot') return 'https://api.individual.githubcopilot.com'
   return 'https://api.anthropic.com'
 })
 
@@ -1581,13 +1608,20 @@ watch(
       // Initialize API Key fields for apikey type
       if (newAccount.type === 'apikey' && newAccount.credentials) {
         const credentials = newAccount.credentials as Record<string, unknown>
-        const platformDefaultUrl =
-          newAccount.platform === 'openai' || newAccount.platform === 'sora'
-            ? 'https://api.openai.com'
-            : newAccount.platform === 'gemini'
-              ? 'https://generativelanguage.googleapis.com'
-              : 'https://api.anthropic.com'
-        editBaseUrl.value = (credentials.base_url as string) || platformDefaultUrl
+
+        // Copilot uses github_token instead of api_key
+        if (newAccount.platform === 'copilot') {
+          editBaseUrl.value = (credentials.base_url as string) || 'https://api.individual.githubcopilot.com'
+          editGithubToken.value = '' // never show existing token
+        } else {
+          const platformDefaultUrl =
+            newAccount.platform === 'openai' || newAccount.platform === 'sora'
+              ? 'https://api.openai.com'
+              : newAccount.platform === 'gemini'
+                ? 'https://generativelanguage.googleapis.com'
+                : 'https://api.anthropic.com'
+          editBaseUrl.value = (credentials.base_url as string) || platformDefaultUrl
+        }
 
         // Load model mappings and detect mode
         const existingMappings = credentials.model_mapping as Record<string, string> | undefined
@@ -1632,7 +1666,9 @@ watch(
             ? 'https://api.openai.com'
             : newAccount.platform === 'gemini'
               ? 'https://generativelanguage.googleapis.com'
-              : 'https://api.anthropic.com'
+              : newAccount.platform === 'copilot'
+                ? 'https://api.individual.githubcopilot.com'
+                : 'https://api.anthropic.com'
         editBaseUrl.value = platformDefaultUrl
         modelRestrictionMode.value = 'whitelist'
         modelMappings.value = []
@@ -1641,6 +1677,7 @@ watch(
         selectedErrorCodes.value = []
       }
       editApiKey.value = ''
+      editGithubToken.value = ''
     }
   },
   { immediate: true }
@@ -2055,48 +2092,69 @@ const handleSubmit = async () => {
     if (props.account.type === 'apikey') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newBaseUrl = editBaseUrl.value.trim() || defaultBaseUrl.value
-      const shouldApplyModelMapping = !(props.account.platform === 'openai' && openaiPassthroughEnabled.value)
 
-      // Always update credentials for apikey type to handle model mapping changes
-      const newCredentials: Record<string, unknown> = {
-        base_url: newBaseUrl
-      }
-
-      // Handle API key
-      if (editApiKey.value.trim()) {
-        // User provided a new API key
-        newCredentials.api_key = editApiKey.value.trim()
-      } else if (currentCredentials.api_key) {
-        // Preserve existing api_key
-        newCredentials.api_key = currentCredentials.api_key
-      } else {
-        appStore.showError(t('admin.accounts.apiKeyIsRequired'))
-        return
-      }
-
-      // Add model mapping if configured（OpenAI 开启自动透传时保留现有映射，不再编辑）
-      if (shouldApplyModelMapping) {
-        const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
-        if (modelMapping) {
-          newCredentials.model_mapping = modelMapping
+      // Copilot uses github_token instead of api_key
+      if (props.account.platform === 'copilot') {
+        const newCredentials: Record<string, unknown> = {
+          base_url: newBaseUrl
         }
-      } else if (currentCredentials.model_mapping) {
-        newCredentials.model_mapping = currentCredentials.model_mapping
-      }
+        if (editGithubToken.value.trim()) {
+          newCredentials.github_token = editGithubToken.value.trim()
+        } else if (currentCredentials.github_token) {
+          newCredentials.github_token = currentCredentials.github_token
+        } else {
+          appStore.showError(t('admin.accounts.copilot.pleaseEnterToken'))
+          return
+        }
+        applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
+        if (!applyTempUnschedConfig(newCredentials)) {
+          return
+        }
+        updatePayload.credentials = newCredentials
+      } else {
+        const shouldApplyModelMapping = !(props.account.platform === 'openai' && openaiPassthroughEnabled.value)
 
-      // Add custom error codes if enabled
-      if (customErrorCodesEnabled.value) {
-        newCredentials.custom_error_codes_enabled = true
-        newCredentials.custom_error_codes = [...selectedErrorCodes.value]
-      }
+        // Always update credentials for apikey type to handle model mapping changes
+        const newCredentials: Record<string, unknown> = {
+          base_url: newBaseUrl
+        }
 
-      // Add intercept warmup requests setting
-      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      if (!applyTempUnschedConfig(newCredentials)) {
-        return
-      }
+        // Handle API key
+        if (editApiKey.value.trim()) {
+          // User provided a new API key
+          newCredentials.api_key = editApiKey.value.trim()
+        } else if (currentCredentials.api_key) {
+          // Preserve existing api_key
+          newCredentials.api_key = currentCredentials.api_key
+        } else {
+          appStore.showError(t('admin.accounts.apiKeyIsRequired'))
+          return
+        }
 
-      updatePayload.credentials = newCredentials
+        // Add model mapping if configured（OpenAI 开启自动透传时保留现有映射，不再编辑）
+        if (shouldApplyModelMapping) {
+          const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+          if (modelMapping) {
+            newCredentials.model_mapping = modelMapping
+          }
+        } else if (currentCredentials.model_mapping) {
+          newCredentials.model_mapping = currentCredentials.model_mapping
+        }
+
+        // Add custom error codes if enabled
+        if (customErrorCodesEnabled.value) {
+          newCredentials.custom_error_codes_enabled = true
+          newCredentials.custom_error_codes = [...selectedErrorCodes.value]
+        }
+
+        // Add intercept warmup requests setting
+        applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
+        if (!applyTempUnschedConfig(newCredentials)) {
+          return
+        }
+
+        updatePayload.credentials = newCredentials
+      }
     } else if (props.account.type === 'upstream') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newCredentials: Record<string, unknown> = { ...currentCredentials }

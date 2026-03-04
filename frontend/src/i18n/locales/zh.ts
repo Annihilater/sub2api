@@ -1456,7 +1456,8 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
-        sora: 'Sora'
+        sora: 'Sora',
+        copilot: 'Copilot'
       },
       saving: '保存中...',
       noGroups: '暂无分组',
@@ -1804,7 +1805,8 @@ export default {
         anthropic: 'Anthropic',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
-        sora: 'Sora'
+        sora: 'Sora',
+        copilot: 'Copilot'
       },
       types: {
         oauth: 'OAuth',
@@ -2468,6 +2470,7 @@ export default {
       soraAccount: 'Sora 账号',
       geminiAccount: 'Gemini 账号',
       antigravityAccount: 'Antigravity 账号',
+      copilotAccount: 'Copilot 账号',
       inputMethod: '输入方式',
       reAuthorizedSuccess: '账号重新授权成功',
       // Test Modal
@@ -2494,6 +2497,27 @@ export default {
       soraTestTarget: '检测目标：Sora 账号能力',
       soraTestMode: '模式：连通性 + 能力探测',
       soraTestingFlow: '执行 Sora 连通性与能力检测...',
+      // Copilot 相关
+      copilot: {
+        githubToken: 'GitHub 个人访问令牌 *',
+        githubTokenHint: '具有 Copilot 访问权限的 GitHub PAT（ghp_xxx 或 github_pat_xxx）',
+        pleaseEnterToken: '请输入 GitHub 个人访问令牌',
+        baseUrlHint: '默认：https://api.individual.githubcopilot.com，仅在使用自定义端点时修改。',
+        deviceOAuth: 'GitHub 登录（推荐）',
+        deviceOAuthDesc: '通过浏览器登录，支持组织 Copilot',
+        patMethod: '个人访问令牌',
+        patMethodDesc: '手动输入具有 copilot 权限的 PAT',
+        deviceOAuthIntro: '点击下方按钮开始 GitHub 认证。认证码将出现在页面上——请在打开的浏览器窗口中输入。',
+        startAuth: '开始 GitHub 认证',
+        waitingForAuth: '等待授权...',
+        openBrowser: '请在浏览器中打开以下链接并输入下方的验证码：',
+        enterCode: '请输入此验证码：',
+        authSuccess: 'GitHub 认证成功！',
+        loggedInAs: '已登录为 {login}',
+        tryAgain: '重试',
+        deviceFlowError: '设备认证流程启动失败',
+        pleaseCompleteAuth: '请先完成 GitHub 认证'
+      },
       // Stats Modal
       viewStats: '查看统计',
       usageStatistics: '使用统计',

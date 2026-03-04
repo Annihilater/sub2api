@@ -1399,7 +1399,8 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
-        sora: 'Sora'
+        sora: 'Sora',
+        copilot: 'Copilot'
       },
       deleteConfirm:
         "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",
@@ -1659,7 +1660,8 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
-        sora: 'Sora'
+        sora: 'Sora',
+        copilot: 'Copilot'
       },
       types: {
         oauth: 'OAuth',
@@ -2337,6 +2339,7 @@ export default {
       soraAccount: 'Sora Account',
       geminiAccount: 'Gemini Account',
       antigravityAccount: 'Antigravity Account',
+      copilotAccount: 'Copilot Account',
       inputMethod: 'Input Method',
       reAuthorizedSuccess: 'Account re-authorized successfully',
       // Test Modal
@@ -2365,6 +2368,27 @@ export default {
       soraTestTarget: 'Target: Sora account capability',
       soraTestMode: 'Mode: Connectivity + Capability checks',
       soraTestingFlow: 'Running Sora connectivity and capability checks...',
+      // Copilot specific
+      copilot: {
+        githubToken: 'GitHub Personal Access Token *',
+        githubTokenHint: 'Your GitHub PAT with Copilot access (ghp_xxx or github_pat_xxx)',
+        pleaseEnterToken: 'Please enter your GitHub Personal Access Token',
+        baseUrlHint: 'Default: https://api.individual.githubcopilot.com. Change only if using a custom endpoint.',
+        deviceOAuth: 'GitHub Login (Recommended)',
+        deviceOAuthDesc: 'Login via browser, works with org Copilot',
+        patMethod: 'Personal Access Token',
+        patMethodDesc: 'Manual PAT with copilot scope',
+        deviceOAuthIntro: 'Click the button below to start GitHub authentication. A code will appear — enter it in the browser window that opens.',
+        startAuth: 'Start GitHub Authentication',
+        waitingForAuth: 'Waiting for authorization...',
+        openBrowser: 'Open the following link in your browser and enter the code below:',
+        enterCode: 'Enter this code:',
+        authSuccess: 'GitHub authentication successful!',
+        loggedInAs: 'Logged in as {login}',
+        tryAgain: 'Try again',
+        deviceFlowError: 'Failed to start device authentication flow',
+        pleaseCompleteAuth: 'Please complete GitHub authentication first'
+      },
       // Stats Modal
       viewStats: 'View Stats',
       usageStatistics: 'Usage Statistics',
