@@ -284,51 +284,39 @@ func translateAnthropicToOpenAI(body []byte) ([]byte, error) {
 	return json.Marshal(openAIReq)
 }
 
-// normalizeCopilotModel maps Anthropic-style model names to the short Copilot
-// model IDs that the Copilot API actually accepts.
+// normalizeCopilotModel maps Anthropic-style model names (dashes) to the exact
+// Copilot API model IDs (dots).
 //
-// Strategy (mirrors copilot-api open-source project):
-//   - claude-sonnet-4-*  → "claude-sonnet-4"   (any sub-version collapsed)
-//   - claude-opus-4-*    → "claude-opus-4"
-//   - claude-haiku-4-*   → "claude-haiku-4"
-//   - claude-sonnet-3-*  → "claude-sonnet-3.7" (legacy, keep minor version)
-//   - claude-opus-3-*    → "claude-opus-3"
-//   - claude-haiku-3-*   → "claude-haiku-3.5"
-//   - anything else      → unchanged
-//
-// This allows Claude Code (which only knows official model IDs like
-// "claude-sonnet-4-5") to route through Copilot accounts transparently.
+// Claude Code sends model names like "claude-sonnet-4-5" (dashes, as exposed
+// by our /v1/models endpoint). Copilot API expects "claude-sonnet-4.5" (dots).
 //
 // Examples:
 //
-//	"claude-sonnet-4-5"          → "claude-sonnet-4"
-//	"claude-sonnet-4-5-20250929" → "claude-sonnet-4"
-//	"claude-opus-4-5"            → "claude-opus-4"
-//	"claude-haiku-4-5"           → "claude-haiku-4"
+//	"claude-sonnet-4-5"          → "claude-sonnet-4.5"
+//	"claude-sonnet-4-5-20250929" → "claude-sonnet-4.5"
+//	"claude-opus-4-6"            → "claude-opus-4.6"
+//	"claude-haiku-4-5"           → "claude-haiku-4.5"
 //	"gpt-4o"                     → "gpt-4o"  (unchanged)
 func normalizeCopilotModel(model string) string {
-	// Gen-4 models: collapse all sub-versions to the base name.
-	if strings.HasPrefix(model, "claude-sonnet-4-") {
-		return "claude-sonnet-4"
-	}
-	if strings.HasPrefix(model, "claude-opus-4-") {
-		return "claude-opus-4"
-	}
-	if strings.HasPrefix(model, "claude-haiku-4-") {
-		return "claude-haiku-4"
+	prefixes := []string{
+		"claude-sonnet-4-",
+		"claude-opus-4-",
+		"claude-haiku-4-",
+		"claude-sonnet-3-",
+		"claude-opus-3-",
+		"claude-haiku-3-",
 	}
 
-	// Gen-3 models: keep the minor version with dot notation.
-	if strings.HasPrefix(model, "claude-sonnet-3-") {
-		return "claude-sonnet-3.7"
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(model, prefix) {
+			// Extract just the minor version number (e.g. "5" from "claude-sonnet-4-5-20250929")
+			rest := model[len(prefix):]
+			minor := strings.SplitN(rest, "-", 2)[0]
+			// Rebuild with dot: "claude-sonnet-4.5"
+			base := prefix[:len(prefix)-1] // strip trailing "-"
+			return base + "." + minor
+		}
 	}
-	if strings.HasPrefix(model, "claude-opus-3-") {
-		return "claude-opus-3"
-	}
-	if strings.HasPrefix(model, "claude-haiku-3-") {
-		return "claude-haiku-3.5"
-	}
-
 	return model
 }
 

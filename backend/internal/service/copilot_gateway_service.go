@@ -9,12 +9,18 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/copilot"
 	"github.com/gin-gonic/gin"
 )
+
+// claudeModelDotPattern matches Claude model IDs with dot-separated versions,
+// e.g. "claude-sonnet-4.5", "claude-opus-4.6", "claude-haiku-4.5".
+// Used to rewrite these for clients that expect dash-separated versions.
+var claudeModelDotPattern = regexp.MustCompile(`claude-(?:sonnet|opus|haiku)-\d+\.\d+`)
 
 // CopilotGatewayService handles forwarding requests to the GitHub Copilot API.
 //
@@ -354,10 +360,32 @@ func (s *CopilotGatewayService) ListModels(
 		return nil, fmt.Errorf("copilot: models HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
+	// Rewrite model IDs: replace dots with dashes in Claude model names so that
+	// Claude Code's built-in model whitelist accepts them.
+	// e.g. "claude-sonnet-4.5" → "claude-sonnet-4-5"
+	// The reverse mapping is applied in normalizeCopilotModel when forwarding requests.
+	body = rewriteModelIDsForClient(body)
+
 	return body, nil
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// rewriteModelIDsForClient rewrites Claude model IDs in a Copilot /models JSON
+// response, replacing dots with dashes so that Claude Code's built-in model
+// whitelist accepts them.
+//
+// e.g. "claude-sonnet-4.5" → "claude-sonnet-4-5"
+//
+// Only Claude model IDs are rewritten; GPT and other models are left unchanged.
+func rewriteModelIDsForClient(body []byte) []byte {
+	// Simple string replacement on the raw JSON — fast and avoids full parse/re-encode.
+	// We replace patterns like "claude-xxx-N.M" → "claude-xxx-N-M".
+	result := claudeModelDotPattern.ReplaceAllFunc(body, func(match []byte) []byte {
+		return bytes.ReplaceAll(match, []byte{'.'}, []byte{'-'})
+	})
+	return result
+}
+
+
 // Anthropic /v1/messages gateway
 // ─────────────────────────────────────────────────────────────────────────────
 
