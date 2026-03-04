@@ -356,3 +356,212 @@ func (s *CopilotGatewayService) ListModels(
 
 	return body, nil
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Anthropic /v1/messages gateway
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ForwardMessages receives an Anthropic /v1/messages request, translates it to
+// OpenAI /chat/completions format, forwards it to the Copilot API, and
+// translates the response back to Anthropic format.
+//
+// This allows Claude Code (and any Anthropic-compatible client) to use GitHub
+// Copilot accounts as the backend without any client-side changes.
+func (s *CopilotGatewayService) ForwardMessages(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	anthropicBody []byte,
+) (*CopilotForwardResult, error) {
+	startTime := time.Now()
+
+	// Detect streaming before translation (we need to know for the response path).
+	isStream := detectAnthropicStream(anthropicBody)
+
+	// Translate Anthropic request → OpenAI format.
+	openAIBody, err := translateAnthropicToOpenAI(anthropicBody)
+	if err != nil {
+		return nil, fmt.Errorf("copilot messages: translate request: %w", err)
+	}
+
+	// Apply model mapping (operates on the already-translated OpenAI body).
+	openAIBody, model := s.applyModelMapping(openAIBody, account)
+
+	// Get Copilot API token.
+	token, err := s.tokenProvider.GetAccessToken(ctx, account)
+	if err != nil {
+		return nil, fmt.Errorf("copilot messages: auth: %w", err)
+	}
+
+	// Determine base URL.
+	baseURL := copilot.CopilotAPIBase
+	if customURL := strings.TrimSpace(account.GetCredential("base_url")); customURL != "" {
+		baseURL = strings.TrimRight(customURL, "/")
+	}
+
+	// Build upstream request to Copilot /chat/completions.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(openAIBody))
+	if err != nil {
+		return nil, fmt.Errorf("copilot messages: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	for k, vals := range copilot.CopilotHeaders("user", false) {
+		for _, v := range vals {
+			req.Header.Set(k, v)
+		}
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("copilot messages: upstream request: %w", err)
+	}
+
+	slog.Debug("copilot messages upstream response",
+		"account_id", account.ID,
+		"model", model,
+		"status", resp.StatusCode,
+		"stream", isStream,
+		"latency_ms", time.Since(startTime).Milliseconds())
+
+	if resp.StatusCode != http.StatusOK {
+		return s.handleErrorResponse(c, resp, account)
+	}
+
+	if isStream {
+		return s.handleMessagesStreamingResponse(c, resp, model)
+	}
+	return s.handleMessagesNonStreamingResponse(c, resp, model)
+}
+
+// handleMessagesNonStreamingResponse reads the OpenAI response and writes back
+// an Anthropic-format JSON response.
+func (s *CopilotGatewayService) handleMessagesNonStreamingResponse(
+	c *gin.Context,
+	resp *http.Response,
+	model string,
+) (*CopilotForwardResult, error) {
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("copilot messages: read response: %w", err)
+	}
+
+	usage := s.parseNonStreamUsage(body)
+
+	// Translate OpenAI response → Anthropic format.
+	anthropicBody, err := translateOpenAIToAnthropic(body)
+	if err != nil {
+		slog.Warn("copilot messages: failed to translate response, forwarding raw",
+			"error", err, "model", model)
+		// Fall back to raw body so the client gets something.
+		c.Data(http.StatusOK, "application/json", body)
+		return &CopilotForwardResult{StatusCode: http.StatusOK, Model: model, Usage: usage}, nil
+	}
+
+	c.Data(http.StatusOK, "application/json", anthropicBody)
+	return &CopilotForwardResult{
+		StatusCode: http.StatusOK,
+		Model:      model,
+		Usage:      usage,
+	}, nil
+}
+
+// handleMessagesStreamingResponse reads the Copilot SSE stream, translates each
+// OpenAI chunk to Anthropic SSE events, and writes them to the client.
+func (s *CopilotGatewayService) handleMessagesStreamingResponse(
+	c *gin.Context,
+	resp *http.Response,
+	model string,
+) (*CopilotForwardResult, error) {
+	defer resp.Body.Close()
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Status(http.StatusOK)
+
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		return nil, fmt.Errorf("copilot messages: response writer does not support flushing")
+	}
+
+	state := &copilotStreamState{
+		toolCalls: make(map[int]copilotToolCallInfo),
+	}
+	usage := &CopilotUsage{}
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if !strings.HasPrefix(line, "data: ") {
+			// Forward blank lines / non-data lines as-is to maintain SSE framing.
+			fmt.Fprintf(c.Writer, "%s\n", line)
+			flusher.Flush()
+			continue
+		}
+
+		data := line[6:]
+		if data == "[DONE]" {
+			// Anthropic clients don't expect [DONE]; just stop.
+			break
+		}
+
+		var chunk openAIChatStreamChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			slog.Debug("copilot messages stream: skip unparseable chunk", "data", data)
+			continue
+		}
+
+		// Accumulate usage.
+		if chunk.Usage != nil {
+			usage.PromptTokens = chunk.Usage.PromptTokens
+			usage.CompletionTokens = chunk.Usage.CompletionTokens
+			usage.TotalTokens = chunk.Usage.TotalTokens
+		}
+
+		// Translate chunk → Anthropic events.
+		events := translateChunkToAnthropicEvents(&chunk, state)
+		for _, evt := range events {
+			fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", extractEventType(evt), evt)
+			flusher.Flush()
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		slog.Warn("copilot messages stream scanner error", "error", err)
+	}
+
+	return &CopilotForwardResult{
+		StatusCode: http.StatusOK,
+		Model:      model,
+		Usage:      usage,
+	}, nil
+}
+
+// detectAnthropicStream checks if an Anthropic request body has "stream": true.
+func detectAnthropicStream(body []byte) bool {
+	var req struct {
+		Stream bool `json:"stream"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return false
+	}
+	return req.Stream
+}
+
+// extractEventType reads the "type" field from a JSON event object for the SSE
+// event name (e.g. "message_start", "content_block_delta", …).
+func extractEventType(jsonStr string) string {
+	var e struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal([]byte(jsonStr), &e); err == nil && e.Type != "" {
+		return e.Type
+	}
+	return "message"
+}

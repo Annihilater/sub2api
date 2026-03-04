@@ -143,5 +143,7 @@ func RegisterGatewayRoutes(
 	{
 		copilotV1.POST("/chat/completions", h.CopilotGateway.ChatCompletions)
 		copilotV1.GET("/models", h.CopilotGateway.Models)
+		// Anthropic-compatible endpoint — allows Claude Code to use Copilot accounts directly.
+		copilotV1.POST("/messages", h.CopilotGateway.Messages)
 	}
 }
