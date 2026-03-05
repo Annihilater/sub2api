@@ -1095,6 +1095,34 @@
         </div>
       </div>
 
+      <!-- Copilot plan type selection (both auth methods) -->
+      <div v-if="form.platform === 'copilot'" class="space-y-3">
+        <div>
+          <label class="input-label">{{ t('admin.accounts.copilot.planType') }}</label>
+          <div class="mt-2 grid grid-cols-3 gap-2">
+            <button
+              v-for="plan in [
+                { value: 'individual', label: t('admin.accounts.copilot.planTypeIndividual') },
+                { value: 'business',   label: t('admin.accounts.copilot.planTypeBusiness') },
+                { value: 'enterprise', label: t('admin.accounts.copilot.planTypeEnterprise') },
+              ]"
+              :key="plan.value"
+              type="button"
+              @click="copilotPlanType = plan.value"
+              :class="[
+                'rounded-lg border-2 px-3 py-2 text-sm font-medium transition-all text-center',
+                copilotPlanType === plan.value
+                  ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300'
+                  : 'border-gray-200 text-gray-600 hover:border-primary-300 dark:border-dark-600 dark:text-gray-400 dark:hover:border-primary-700'
+              ]"
+            >
+              {{ plan.label }}
+            </button>
+          </div>
+          <p class="input-hint mt-1.5">{{ t('admin.accounts.copilot.planTypeHint') }}</p>
+        </div>
+      </div>
+
       <!-- API Key input (only for apikey type, excluding Antigravity and Copilot which have their own fields) -->
       <div v-if="form.type === 'apikey' && form.platform !== 'antigravity' && form.platform !== 'copilot'" class="space-y-4">
         <div>
@@ -2663,6 +2691,7 @@ const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const apiKeyValue = ref('')
 const copilotGithubToken = ref('') // For Copilot: GitHub Personal Access Token
 const copilotAddMethod = ref<'device-oauth' | 'pat'>('device-oauth') // Copilot auth method
+const copilotPlanType = ref('individual') // Copilot plan type: individual / business / enterprise
 const copilotDeviceState = ref<'idle' | 'waiting' | 'success' | 'error'>('idle')
 const copilotDeviceLoading = ref(false)
 const copilotDeviceError = ref('')
@@ -2978,6 +3007,7 @@ watch(
       form.type = 'apikey'
       copilotAddMethod.value = 'device-oauth'
       copilotGithubToken.value = ''
+      copilotPlanType.value = 'individual'
       resetCopilotDeviceFlow()
     }
     if (newPlatform !== 'openai') {
@@ -3582,7 +3612,8 @@ const handleSubmit = async () => {
     }
 
     const credentials: Record<string, unknown> = {
-      github_token: githubToken
+      github_token: githubToken,
+      plan_type: copilotPlanType.value || 'individual'
     }
 
     await createAccountAndFinish('copilot', 'apikey', credentials)

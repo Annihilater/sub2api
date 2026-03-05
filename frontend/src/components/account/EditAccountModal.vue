@@ -353,16 +353,46 @@
 
       <!-- Copilot credential fields (apikey type, copilot platform) -->
       <div v-if="account.type === 'apikey' && account.platform === 'copilot'" class="space-y-4">
+        <!-- Plan type selector -->
         <div>
-          <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
-          <input
-            v-model="editBaseUrl"
-            type="text"
-            class="input"
-            placeholder="https://api.individual.githubcopilot.com"
-          />
-          <p class="input-hint">{{ t('admin.accounts.copilot.baseUrlHint') }}</p>
+          <label class="input-label">{{ t('admin.accounts.copilot.planType') }}</label>
+          <div class="mt-2 grid grid-cols-3 gap-2">
+            <button
+              v-for="plan in [
+                { value: 'individual', label: t('admin.accounts.copilot.planTypeIndividual') },
+                { value: 'business',   label: t('admin.accounts.copilot.planTypeBusiness') },
+                { value: 'enterprise', label: t('admin.accounts.copilot.planTypeEnterprise') },
+              ]"
+              :key="plan.value"
+              type="button"
+              @click="copilotEditPlanType = plan.value"
+              :class="[
+                'rounded-lg border-2 px-3 py-2 text-sm font-medium transition-all text-center',
+                copilotEditPlanType === plan.value
+                  ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300'
+                  : 'border-gray-200 text-gray-600 hover:border-primary-300 dark:border-dark-600 dark:text-gray-400 dark:hover:border-primary-700'
+              ]"
+            >
+              {{ plan.label }}
+            </button>
+          </div>
+          <p class="input-hint mt-1.5">{{ t('admin.accounts.copilot.planTypeHint') }}</p>
         </div>
+        <!-- Advanced: custom base URL (collapsed by default) -->
+        <details class="rounded-lg border border-gray-200 dark:border-dark-600">
+          <summary class="cursor-pointer select-none px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.baseUrl') }} ({{ t('common.advanced') }})
+          </summary>
+          <div class="px-3 pb-3 pt-1">
+            <input
+              v-model="editBaseUrl"
+              type="text"
+              class="input"
+              placeholder="https://api.githubcopilot.com"
+            />
+            <p class="input-hint">{{ t('admin.accounts.copilot.baseUrlHint') }}</p>
+          </div>
+        </details>
         <div>
           <label class="input-label">{{ t('admin.accounts.copilot.githubToken') }}</label>
           <input
@@ -1431,6 +1461,7 @@ const submitting = ref(false)
 const editBaseUrl = ref('https://api.anthropic.com')
 const editApiKey = ref('')
 const editGithubToken = ref('')
+const copilotEditPlanType = ref('individual') // individual | business | enterprise
 const modelMappings = ref<ModelMapping[]>([])
 const modelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
 const allowedModels = ref<string[]>([])
@@ -1551,7 +1582,7 @@ const tempUnschedPresets = computed(() => [
 const defaultBaseUrl = computed(() => {
   if (props.account?.platform === 'openai' || props.account?.platform === 'sora') return 'https://api.openai.com'
   if (props.account?.platform === 'gemini') return 'https://generativelanguage.googleapis.com'
-  if (props.account?.platform === 'copilot') return 'https://api.individual.githubcopilot.com'
+  if (props.account?.platform === 'copilot') return 'https://api.githubcopilot.com'
   return 'https://api.anthropic.com'
 })
 
@@ -1686,7 +1717,19 @@ watch(
 
         // Copilot uses github_token instead of api_key
         if (newAccount.platform === 'copilot') {
-          editBaseUrl.value = (credentials.base_url as string) || 'https://api.individual.githubcopilot.com'
+          // Load plan_type (new field); fall back to inferring from legacy base_url
+          const savedPlanType = credentials.plan_type as string | undefined
+          const legacyBaseUrl = credentials.base_url as string | undefined
+          if (savedPlanType && ['individual', 'business', 'enterprise'].includes(savedPlanType)) {
+            copilotEditPlanType.value = savedPlanType
+          } else if (legacyBaseUrl?.includes('business.githubcopilot.com')) {
+            copilotEditPlanType.value = 'business'
+          } else if (legacyBaseUrl?.includes('enterprise.githubcopilot.com')) {
+            copilotEditPlanType.value = 'enterprise'
+          } else {
+            copilotEditPlanType.value = 'individual'
+          }
+          editBaseUrl.value = legacyBaseUrl || ''
           editGithubToken.value = '' // never show existing token
           // Load copilot model mapping
           const rawCopilotMapping = credentials.model_mapping as Record<string, string> | undefined
@@ -1749,7 +1792,7 @@ watch(
             : newAccount.platform === 'gemini'
               ? 'https://generativelanguage.googleapis.com'
               : newAccount.platform === 'copilot'
-                ? 'https://api.individual.githubcopilot.com'
+                ? 'https://api.githubcopilot.com'
                 : 'https://api.anthropic.com'
         editBaseUrl.value = platformDefaultUrl
         modelRestrictionMode.value = 'whitelist'
@@ -2196,7 +2239,12 @@ const handleSubmit = async () => {
       // Copilot uses github_token instead of api_key
       if (props.account.platform === 'copilot') {
         const newCredentials: Record<string, unknown> = {
-          base_url: newBaseUrl
+          plan_type: copilotEditPlanType.value || 'individual'
+        }
+        // Only persist base_url if the user explicitly filled in a custom URL
+        const customBaseUrl = editBaseUrl.value.trim()
+        if (customBaseUrl) {
+          newCredentials.base_url = customBaseUrl
         }
         if (editGithubToken.value.trim()) {
           newCredentials.github_token = editGithubToken.value.trim()
