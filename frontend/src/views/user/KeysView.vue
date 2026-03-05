@@ -1615,6 +1615,10 @@ const executeCcsImport = (row: ApiKey, clientType: 'claude' | 'gemini') => {
     // Antigravity always uses /antigravity suffix
     app = clientType === 'gemini' ? 'gemini' : 'claude'
     endpoint = `${baseUrl}/antigravity`
+  } else if (platform === 'copilot') {
+    // Copilot uses /copilot path with Anthropic-compatible endpoint for Claude Code
+    app = 'claude'
+    endpoint = `${baseUrl}/copilot`
   } else {
     switch (platform) {
       case 'openai':
@@ -1645,6 +1649,30 @@ const executeCcsImport = (row: ApiKey, clientType: 'claude' | 'gemini') => {
       };
     }
   })`
+
+  // Build extra params per platform
+  const extraParams: Record<string, string> = {}
+
+  if (platform === 'copilot') {
+    const copilotConfig = JSON.stringify({
+      "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+      "alwaysThinkingEnabled": true,
+      "env": {
+        "ANTHROPIC_AUTH_TOKEN": row.key,
+        "ANTHROPIC_BASE_URL": endpoint,
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
+        "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+        "ANTHROPIC_REASONING_MODEL": "claude-opus-4-6"
+      },
+      "includeCoAuthoredBy": false,
+      "model": "claude-sonnet-4-6",
+      "skipDangerousModePermissionPrompt": true
+    }, null, 2)
+    extraParams['configScript'] = btoa(unescape(encodeURIComponent(copilotConfig)))
+  }
+
   const params = new URLSearchParams({
     resource: 'provider',
     app: app,
@@ -1655,7 +1683,8 @@ const executeCcsImport = (row: ApiKey, clientType: 'claude' | 'gemini') => {
     configFormat: 'json',
     usageEnabled: 'true',
     usageScript: btoa(usageScript),
-    usageAutoInterval: '30'
+    usageAutoInterval: '30',
+    ...extraParams
   })
   const deeplink = `ccswitch://v1/import?${params.toString()}`
 

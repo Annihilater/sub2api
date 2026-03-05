@@ -459,8 +459,9 @@ type ForwardResult struct {
 	Model            string
 	Stream           bool
 	Duration         time.Duration
-	FirstTokenMs     *int // 首字时间（流式请求）
-	ClientDisconnect bool // 客户端是否在流式传输过程中断开
+	FirstTokenMs     *int    // 首字时间（流式请求）
+	ReasoningEffort  *string // 推理强度（Responses API 请求，如 "low"/"medium"/"high"）
+	ClientDisconnect bool    // 客户端是否在流式传输过程中断开
 
 	// 图片生成计费字段（图片生成模型使用）
 	ImageCount int    // 生成的图片数量
@@ -3889,7 +3890,16 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	}
 
 	if account != nil && account.IsAnthropicAPIKeyPassthroughEnabled() {
-		return s.forwardAnthropicAPIKeyPassthrough(ctx, c, account, parsed.Body, parsed.Model, parsed.Stream, startTime)
+		passthroughBody := parsed.Body
+		passthroughModel := parsed.Model
+		if passthroughModel != "" {
+			if mappedModel := account.GetMappedModel(passthroughModel); mappedModel != passthroughModel {
+				passthroughBody = s.replaceModelInBody(passthroughBody, mappedModel)
+				logger.LegacyPrintf("service.gateway", "Passthrough model mapping: %s -> %s (account: %s)", parsed.Model, mappedModel, account.Name)
+				passthroughModel = mappedModel
+			}
+		}
+		return s.forwardAnthropicAPIKeyPassthrough(ctx, c, account, passthroughBody, passthroughModel, parsed.Stream, startTime)
 	}
 
 	body := parsed.Body
@@ -4574,7 +4584,7 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 		if err != nil {
 			return nil, err
 		}
-		targetURL = validatedURL + "/v1/messages"
+		targetURL = validatedURL + "/v1/messages?beta=true"
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
@@ -4954,7 +4964,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 			if err != nil {
 				return nil, err
 			}
-			targetURL = validatedURL + "/v1/messages"
+			targetURL = validatedURL + "/v1/messages?beta=true"
 		}
 	}
 
@@ -6477,6 +6487,7 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		AccountID:             account.ID,
 		RequestID:             result.RequestID,
 		Model:                 result.Model,
+		ReasoningEffort:       result.ReasoningEffort,
 		InputTokens:           result.Usage.InputTokens,
 		OutputTokens:          result.Usage.OutputTokens,
 		CacheCreationTokens:   result.Usage.CacheCreationInputTokens,
@@ -6781,7 +6792,14 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	}
 
 	if account != nil && account.IsAnthropicAPIKeyPassthroughEnabled() {
-		return s.forwardCountTokensAnthropicAPIKeyPassthrough(ctx, c, account, parsed.Body)
+		passthroughBody := parsed.Body
+		if reqModel := parsed.Model; reqModel != "" {
+			if mappedModel := account.GetMappedModel(reqModel); mappedModel != reqModel {
+				passthroughBody = s.replaceModelInBody(passthroughBody, mappedModel)
+				logger.LegacyPrintf("service.gateway", "CountTokens passthrough model mapping: %s -> %s (account: %s)", reqModel, mappedModel, account.Name)
+			}
+		}
+		return s.forwardCountTokensAnthropicAPIKeyPassthrough(ctx, c, account, passthroughBody)
 	}
 
 	body := parsed.Body
@@ -7072,7 +7090,7 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 		if err != nil {
 			return nil, err
 		}
-		targetURL = validatedURL + "/v1/messages/count_tokens"
+		targetURL = validatedURL + "/v1/messages/count_tokens?beta=true"
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
@@ -7119,7 +7137,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 			if err != nil {
 				return nil, err
 			}
-			targetURL = validatedURL + "/v1/messages/count_tokens"
+			targetURL = validatedURL + "/v1/messages/count_tokens?beta=true"
 		}
 	}
 

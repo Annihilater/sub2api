@@ -47,10 +47,10 @@
         </label>
         <Select
           v-model="selectedModelId"
-          :options="availableModels"
+          :options="sortedModelsWithLabel"
           :disabled="loadingModels || status === 'connecting'"
           value-key="id"
-          label-key="display_name"
+          label-key="label"
           :placeholder="loadingModels ? t('common.loading') + '...' : t('admin.accounts.selectTestModel')"
         />
       </div>
@@ -212,6 +212,27 @@ const errorMessage = ref('')
 const availableModels = ref<ClaudeModel[]>([])
 const selectedModelId = ref('')
 const loadingModels = ref(false)
+
+// Models sorted by display_name, with id shown in parentheses as the label.
+// e.g. "Claude Sonnet 4.5 (claude-sonnet-4-5)"
+const sortedModelsWithLabel = computed(() => {
+  return [...availableModels.value]
+    .sort((a, b) => {
+      const la = (a.display_name || a.id || '').toLowerCase()
+      const lb = (b.display_name || b.id || '').toLowerCase()
+      return la.localeCompare(lb)
+    })
+    .map((m) => ({
+      ...m,
+      // value/label are required by SelectOption; value-key="id" makes Select
+      // use id as the binding value, but we still satisfy the type constraint.
+      value: m.id,
+      label: m.display_name && m.display_name !== m.id
+        ? `${m.display_name} (${m.id})`
+        : m.id
+    }))
+})
+
 let eventSource: EventSource | null = null
 const isSoraAccount = computed(() => props.account?.platform === 'sora')
 
@@ -250,6 +271,12 @@ const loadAvailableModels = async () => {
           availableModels.value.find((m) => m.id === 'gemini-2.5-pro') ||
           availableModels.value.find((m) => m.id === 'gemini-3-flash-preview') ||
           availableModels.value.find((m) => m.id === 'gemini-3-pro-preview')
+        selectedModelId.value = preferred?.id || availableModels.value[0].id
+      } else if (props.account.platform === 'copilot') {
+        const preferred =
+          availableModels.value.find((m) => m.id === 'gpt-4o') ||
+          availableModels.value.find((m) => m.id === 'gpt-4o-mini') ||
+          availableModels.value.find((m) => m.id === 'claude-sonnet-4')
         selectedModelId.value = preferred?.id || availableModels.value[0].id
       } else {
         // Try to select Sonnet as default, otherwise use first model

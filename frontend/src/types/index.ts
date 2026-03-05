@@ -87,6 +87,7 @@ export interface CustomMenuItem {
 export interface PublicSettings {
   registration_enabled: boolean
   email_verify_enabled: boolean
+  registration_email_suffix_whitelist: string[]
   promo_code_enabled: boolean
   password_reset_enabled: boolean
   invitation_code_enabled: boolean
@@ -352,7 +353,7 @@ export interface PaginationConfig {
 
 // ==================== API Key & Group Types ====================
 
-export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'sora'
+export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'sora' | 'copilot'
 
 export type SubscriptionType = 'standard' | 'subscription'
 
@@ -516,7 +517,7 @@ export interface UpdateGroupRequest {
 
 // ==================== Account & Proxy Types ====================
 
-export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'sora'
+export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'sora' | 'copilot'
 export type AccountType = 'oauth' | 'setup-token' | 'apikey' | 'upstream'
 export type OAuthAddMethod = 'oauth' | 'setup-token'
 export type ProxyProtocol = 'http' | 'https' | 'socks5' | 'socks5h'
@@ -1097,7 +1098,8 @@ export interface TrendDataPoint {
   requests: number
   input_tokens: number
   output_tokens: number
-  cache_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
   total_tokens: number
   cost: number // 标准计费
   actual_cost: number // 实际扣除
@@ -1108,6 +1110,8 @@ export interface ModelStat {
   requests: number
   input_tokens: number
   output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
   total_tokens: number
   cost: number // 标准计费
   actual_cost: number // 实际扣除
@@ -1455,4 +1459,46 @@ export interface TotpLoginResponse {
 export interface TotpLogin2FARequest {
   temp_token: string
   totp_code: string
+}
+
+// ==================== Scheduled Test Types ====================
+
+export interface ScheduledTestPlan {
+  id: number
+  account_id: number
+  model_id: string
+  cron_expression: string
+  enabled: boolean
+  max_results: number
+  last_run_at: string | null
+  next_run_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ScheduledTestResult {
+  id: number
+  plan_id: number
+  status: string
+  response_text: string
+  error_message: string
+  latency_ms: number
+  started_at: string
+  finished_at: string
+  created_at: string
+}
+
+export interface CreateScheduledTestPlanRequest {
+  account_id: number
+  model_id: string
+  cron_expression: string
+  enabled?: boolean
+  max_results?: number
+}
+
+export interface UpdateScheduledTestPlanRequest {
+  model_id?: string
+  cron_expression?: string
+  enabled?: boolean
+  max_results?: number
 }

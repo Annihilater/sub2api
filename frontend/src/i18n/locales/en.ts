@@ -110,6 +110,75 @@ export default {
     }
   },
 
+  // Key Usage Query Page
+  keyUsage: {
+    title: 'API Key Usage',
+    subtitle: 'Enter your API Key to view real-time spending and usage status',
+    placeholder: 'sk-ant-mirror-xxxxxxxxxxxx',
+    query: 'Query',
+    querying: 'Querying...',
+    privacyNote: 'Your Key is processed locally in the browser and will not be stored',
+    dateRange: 'Date Range:',
+    dateRangeToday: 'Today',
+    dateRange7d: '7 Days',
+    dateRange30d: '30 Days',
+    dateRangeCustom: 'Custom',
+    apply: 'Apply',
+    used: 'Used',
+    detailInfo: 'Detail Information',
+    tokenStats: 'Token Statistics',
+    modelStats: 'Model Usage Statistics',
+    // Table headers
+    model: 'Model',
+    requests: 'Requests',
+    inputTokens: 'Input Tokens',
+    outputTokens: 'Output Tokens',
+    cacheCreationTokens: 'Cache Creation',
+    cacheReadTokens: 'Cache Read',
+    totalTokens: 'Total Tokens',
+    cost: 'Cost',
+    // Status
+    quotaMode: 'Key Quota Mode',
+    walletBalance: 'Wallet Balance',
+    // Ring card titles
+    totalQuota: 'Total Quota',
+    limit5h: '5-Hour Limit',
+    limitDaily: 'Daily Limit',
+    limit7d: '7-Day Limit',
+    limitWeekly: 'Weekly Limit',
+    limitMonthly: 'Monthly Limit',
+    // Detail rows
+    remainingQuota: 'Remaining Quota',
+    expiresAt: 'Expires At',
+    todayExpires: '(expires today)',
+    daysLeft: '({days} days)',
+    usedQuota: 'Used Quota',
+    subscriptionType: 'Subscription Type',
+    subscriptionExpires: 'Subscription Expires',
+    // Usage stat cells
+    todayRequests: 'Today Requests',
+    todayInputTokens: 'Today Input',
+    todayOutputTokens: 'Today Output',
+    todayTokens: 'Today Tokens',
+    todayCacheCreation: 'Today Cache Creation',
+    todayCacheRead: 'Today Cache Read',
+    todayCost: 'Today Cost',
+    rpmTpm: 'RPM / TPM',
+    totalRequests: 'Total Requests',
+    totalInputTokens: 'Total Input',
+    totalOutputTokens: 'Total Output',
+    totalTokensLabel: 'Total Tokens',
+    totalCacheCreation: 'Total Cache Creation',
+    totalCacheRead: 'Total Cache Read',
+    totalCost: 'Total Cost',
+    avgDuration: 'Avg Duration',
+    // Messages
+    enterApiKey: 'Please enter an API Key',
+    querySuccess: 'Query successful',
+    queryFailed: 'Query failed',
+    queryFailedRetry: 'Query failed, please try again later',
+  },
+
   // Setup Wizard
   setup: {
     title: 'Sub2API Setup',
@@ -202,7 +271,7 @@ export default {
     noData: 'No data',
     expand: 'Expand',
     collapse: 'Collapse',
-    success: 'Success',
+    advanced: 'Advanced',
     error: 'Error',
     critical: 'Critical',
     warning: 'Warning',
@@ -282,7 +351,8 @@ export default {
     mySubscriptions: 'My Subscriptions',
     buySubscription: 'Recharge / Subscription',
     docs: 'Docs',
-    sora: 'Sora Studio'
+    sora: 'Sora Studio',
+    copilotUsage: 'Copilot Usage'
   },
 
   // Auth
@@ -312,6 +382,9 @@ export default {
     passwordMinLength: 'Password must be at least 6 characters',
     loginFailed: 'Login failed. Please check your credentials and try again.',
     registrationFailed: 'Registration failed. Please try again.',
+    emailSuffixNotAllowed: 'This email domain is not allowed for registration.',
+    emailSuffixNotAllowedWithAllowed:
+      'This email domain is not allowed. Allowed domains: {suffixes}',
     loginSuccess: 'Login successful! Welcome back.',
     accountCreatedSuccess: 'Account created successfully! Welcome to {siteName}.',
     reloginRequired: 'Session expired. Please log in again.',
@@ -326,6 +399,16 @@ export default {
     sendingCode: 'Sending...',
     clickToResend: 'Click to resend code',
     resendCode: 'Resend verification code',
+    sendCodeDesc: "We'll send a verification code to",
+    codeSentSuccess: 'Verification code sent! Please check your inbox.',
+    verifying: 'Verifying...',
+    verifyAndCreate: 'Verify & Create Account',
+    resendCountdown: 'Resend code in {countdown}s',
+    backToRegistration: 'Back to registration',
+    sendCodeFailed: 'Failed to send verification code. Please try again.',
+    verifyFailed: 'Verification failed. Please try again.',
+    codeRequired: 'Verification code is required',
+    invalidCode: 'Please enter a valid 6-digit code',
     promoCodeLabel: 'Promo Code',
     promoCodePlaceholder: 'Enter promo code (optional)',
     promoCodeValid: 'Valid! You will receive ${amount} bonus balance',
@@ -526,6 +609,11 @@ export default {
         title: 'OpenCode Example',
         subtitle: 'opencode.json',
         hint: 'Config path: ~/.config/opencode/opencode.json (or opencode.jsonc), create if not exists. Use default providers (openai/anthropic/google) or custom provider_id. API Key can be configured directly or via /connect command. This is an example, adjust models and options as needed.',
+      },
+      copilot: {
+        description: 'Configure your client to route GitHub Copilot requests through the /copilot path. Claude Code uses the Anthropic-compatible endpoint; Codex CLI uses the OpenAI Responses endpoint.',
+        claudeNote: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
+        codexNote: 'Make sure the config directory exists. macOS/Linux users can run mkdir -p ~/.codex to create it.',
       },
     },
     customKeyLabel: 'Custom Key',
@@ -1317,7 +1405,8 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
-        sora: 'Sora'
+        sora: 'Sora',
+        copilot: 'Copilot'
       },
       deleteConfirm:
         "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",
@@ -1482,9 +1571,28 @@ export default {
         "Are you sure you want to revoke the subscription for '{user}'? This action cannot be undone."
     },
 
+    // Copilot Usage Summary Page
+    copilotUsage: {
+      title: 'Copilot Usage',
+      description: 'View GitHub Copilot quota usage across all active Copilot accounts',
+      noAccounts: 'No active Copilot accounts found',
+      fetchFailed: 'Fetch Failed',
+      noQuotaData: 'No quota data available',
+      premiumInteractions: 'Premium Interactions',
+      completions: 'Code Completions',
+      remaining: 'remaining',
+      used: 'Used',
+      percentRemaining: '{n} remaining',
+      stats: {
+        totalAccounts: 'Total Accounts',
+        successCount: 'Loaded',
+        errorCount: 'Failed',
+        overageCount: 'Overaged'
+      }
+    },
+
     // Accounts
     accounts: {
-      title: 'Account Management',
       description: 'Manage AI platform accounts and credentials',
       createAccount: 'Create Account',
       autoRefresh: 'Auto Refresh',
@@ -1577,7 +1685,8 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
-        sora: 'Sora'
+        sora: 'Sora',
+        copilot: 'Copilot'
       },
       types: {
         oauth: 'OAuth',
@@ -1622,6 +1731,7 @@ export default {
         status: 'Status',
         schedulable: 'Schedulable',
         todayStats: 'Today Stats',
+        copilotQuota: 'Copilot Quota',
         groups: 'Groups',
         usageWindows: 'Usage Windows',
         proxy: 'Proxy',
@@ -1774,10 +1884,13 @@ export default {
         wsMode: 'WS mode',
         wsModeDesc: 'Only applies to the current OpenAI account type.',
         wsModeOff: 'Off (off)',
+        wsModeCtxPool: 'Context Pool (ctx_pool)',
+        wsModePassthrough: 'Passthrough (passthrough)',
         wsModeShared: 'Shared (shared)',
         wsModeDedicated: 'Dedicated (dedicated)',
         wsModeConcurrencyHint:
           'When WS mode is enabled, account concurrency becomes the WS connection pool limit for this account.',
+        wsModePassthroughHint: 'Passthrough mode does not use the WS connection pool.',
         oauthResponsesWebsocketsV2: 'OAuth WebSocket Mode',
         oauthResponsesWebsocketsV2Desc:
           'Only applies to OpenAI OAuth. This account can use OpenAI WebSocket Mode only when enabled.',
@@ -2252,6 +2365,7 @@ export default {
       soraAccount: 'Sora Account',
       geminiAccount: 'Gemini Account',
       antigravityAccount: 'Antigravity Account',
+      copilotAccount: 'Copilot Account',
       inputMethod: 'Input Method',
       reAuthorizedSuccess: 'Account re-authorized successfully',
       // Test Modal
@@ -2280,6 +2394,43 @@ export default {
       soraTestTarget: 'Target: Sora account capability',
       soraTestMode: 'Mode: Connectivity + Capability checks',
       soraTestingFlow: 'Running Sora connectivity and capability checks...',
+      // Copilot specific
+      copilot: {
+        githubToken: 'GitHub Personal Access Token *',
+        githubTokenHint: 'Your GitHub PAT with Copilot access (ghp_xxx or github_pat_xxx)',
+        pleaseEnterToken: 'Please enter your GitHub Personal Access Token',
+        planType: 'Copilot Account Type',
+        planTypeHint: 'Select your GitHub Copilot subscription tier. The system will automatically use the correct API endpoint.',
+        planTypeIndividual: 'Individual',
+        planTypeBusiness: 'Business',
+        planTypeEnterprise: 'Enterprise',
+        baseUrlHint: 'Leave blank to auto-select endpoint by account type. Fill in only for private/proxy endpoints.',
+        deviceOAuth: 'GitHub Login (Recommended)',
+        deviceOAuthDesc: 'Login via browser, works with org Copilot',
+        patMethod: 'Personal Access Token',
+        patMethodDesc: 'Manual PAT with copilot scope',
+        deviceOAuthIntro: 'Click the button below to start GitHub authentication. A code will appear — enter it in the browser window that opens.',
+        startAuth: 'Start GitHub Authentication',
+        waitingForAuth: 'Waiting for authorization...',
+        openBrowser: 'Open the following link in your browser and enter the code below:',
+        enterCode: 'Enter this code:',
+        authSuccess: 'GitHub authentication successful!',
+        loggedInAs: 'Logged in as {login}',
+        tryAgain: 'Try again',
+        deviceFlowError: 'Failed to start device authentication flow',
+        pleaseCompleteAuth: 'Please complete GitHub authentication first',
+        modelMapping: 'Copilot Model Mapping',
+        modelMappingHint: 'Map request model names to Copilot actual model names (e.g. claude-sonnet-4-5 → claude-sonnet-4.5). Leave empty to use built-in default mapping (automatic dash↔dot conversion).',
+        quota: {
+          title: 'Copilot Usage',
+          plan: 'Plan',
+          premiumInteractions: 'Premium Interactions',
+          resetDate: 'Resets On',
+          unlimited: 'Unlimited',
+          remaining: '{n} remaining',
+          used: '{used}/{total} used'
+        }
+      },
       // Stats Modal
       viewStats: 'View Stats',
       usageStatistics: 'Usage Statistics',
@@ -2336,6 +2487,34 @@ export default {
       },
       ineligibleWarning:
         'This account is not eligible for Antigravity, but API forwarding still works. Use at your own risk.'
+    },
+
+    // Scheduled Tests
+    scheduledTests: {
+      title: 'Scheduled Tests',
+      addPlan: 'Add Plan',
+      editPlan: 'Edit Plan',
+      deletePlan: 'Delete Plan',
+      model: 'Model',
+      cronExpression: 'Cron Expression',
+      enabled: 'Enabled',
+      lastRun: 'Last Run',
+      nextRun: 'Next Run',
+      maxResults: 'Max Results',
+      noPlans: 'No scheduled test plans',
+      confirmDelete: 'Are you sure you want to delete this plan?',
+      createSuccess: 'Plan created successfully',
+      updateSuccess: 'Plan updated successfully',
+      deleteSuccess: 'Plan deleted successfully',
+      results: 'Test Results',
+      noResults: 'No test results yet',
+      responseText: 'Response',
+      errorMessage: 'Error',
+      success: 'Success',
+      failed: 'Failed',
+      running: 'Running',
+      schedule: 'Schedule',
+      cronHelp: 'Standard 5-field cron expression (e.g., */30 * * * *)'
     },
 
     // Proxies
@@ -3521,6 +3700,15 @@ export default {
     settings: {
       title: 'System Settings',
       description: 'Manage registration, email verification, default values, and SMTP settings',
+      tabs: {
+        general: 'General',
+        security: 'Security',
+        users: 'Users',
+        gateway: 'Gateway',
+        email: 'Email',
+      },
+      emailTabDisabledTitle: 'Email Verification Not Enabled',
+      emailTabDisabledHint: 'Enable email verification in the Security tab to configure SMTP settings.',
       registration: {
         title: 'Registration Settings',
         description: 'Control user registration and verification',
@@ -3528,6 +3716,11 @@ export default {
         enableRegistrationHint: 'Allow new users to register',
         emailVerification: 'Email Verification',
         emailVerificationHint: 'Require email verification for new registrations',
+        emailSuffixWhitelist: 'Email Domain Whitelist',
+        emailSuffixWhitelistHint:
+          "Only email addresses from the specified domains can register (for example, {'@'}qq.com, {'@'}gmail.com)",
+        emailSuffixWhitelistPlaceholder: 'example.com',
+        emailSuffixWhitelistInputHint: 'Leave empty for no restriction',
         promoCode: 'Promo Code',
         promoCodeHint: 'Allow users to use promo codes during registration',
         invitationCode: 'Invitation Code Registration',

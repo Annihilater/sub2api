@@ -110,6 +110,75 @@ export default {
     }
   },
 
+  // Key Usage Query Page
+  keyUsage: {
+    title: 'API Key 用量查询',
+    subtitle: '输入您的 API Key 以查看实时消费金额与使用状态',
+    placeholder: 'sk-ant-mirror-xxxxxxxxxxxx',
+    query: '查询',
+    querying: '查询中...',
+    privacyNote: '您的 Key 仅在浏览器本地处理，不会被存储',
+    dateRange: '统计范围:',
+    dateRangeToday: '今日',
+    dateRange7d: '7 天',
+    dateRange30d: '30 天',
+    dateRangeCustom: '自定义',
+    apply: '应用',
+    used: '已使用',
+    detailInfo: '详细信息',
+    tokenStats: 'Token 统计',
+    modelStats: '模型用量统计',
+    // Table headers
+    model: '模型',
+    requests: '请求数',
+    inputTokens: '输入 Tokens',
+    outputTokens: '输出 Tokens',
+    cacheCreationTokens: '缓存创建',
+    cacheReadTokens: '缓存读取',
+    totalTokens: '总 Tokens',
+    cost: '费用',
+    // Status
+    quotaMode: 'Key 限额模式',
+    walletBalance: '钱包余额',
+    // Ring card titles
+    totalQuota: '总额度',
+    limit5h: '5 小时限额',
+    limitDaily: '日限额',
+    limit7d: '7 天限额',
+    limitWeekly: '周限额',
+    limitMonthly: '月限额',
+    // Detail rows
+    remainingQuota: '剩余额度',
+    expiresAt: '过期时间',
+    todayExpires: '(今日到期)',
+    daysLeft: '({days} 天)',
+    usedQuota: '已用额度',
+    subscriptionType: '订阅类型',
+    subscriptionExpires: '订阅到期',
+    // Usage stat cells
+    todayRequests: '今日请求',
+    todayInputTokens: '今日输入',
+    todayOutputTokens: '今日输出',
+    todayTokens: '今日 Tokens',
+    todayCacheCreation: '今日缓存创建',
+    todayCacheRead: '今日缓存读取',
+    todayCost: '今日费用',
+    rpmTpm: 'RPM / TPM',
+    totalRequests: '累计请求',
+    totalInputTokens: '累计输入',
+    totalOutputTokens: '累计输出',
+    totalTokensLabel: '累计 Tokens',
+    totalCacheCreation: '累计缓存创建',
+    totalCacheRead: '累计缓存读取',
+    totalCost: '累计费用',
+    avgDuration: '平均耗时',
+    // Messages
+    enterApiKey: '请输入 API Key',
+    querySuccess: '查询成功',
+    queryFailed: '查询失败',
+    queryFailedRetry: '查询失败，请稍后重试',
+  },
+
   // Setup Wizard
   setup: {
     title: 'Sub2API 安装向导',
@@ -202,6 +271,7 @@ export default {
     noData: '暂无数据',
     expand: '展开',
     collapse: '收起',
+    advanced: '高级',
     success: '成功',
     error: '错误',
     critical: '严重',
@@ -282,7 +352,8 @@ export default {
     mySubscriptions: '我的订阅',
     buySubscription: '充值/订阅',
     docs: '文档',
-    sora: 'Sora 创作'
+    sora: 'Sora 创作',
+    copilotUsage: 'Copilot 用量'
   },
 
   // Auth
@@ -312,6 +383,8 @@ export default {
     passwordMinLength: '密码至少需要 6 个字符',
     loginFailed: '登录失败，请检查您的凭据后重试。',
     registrationFailed: '注册失败，请重试。',
+    emailSuffixNotAllowed: '该邮箱域名不在允许注册范围内。',
+    emailSuffixNotAllowedWithAllowed: '该邮箱域名不被允许。可用域名：{suffixes}',
     loginSuccess: '登录成功！欢迎回来。',
     accountCreatedSuccess: '账户创建成功！欢迎使用 {siteName}。',
     reloginRequired: '会话已过期，请重新登录。',
@@ -326,6 +399,16 @@ export default {
     sendingCode: '发送中...',
     clickToResend: '点击重新发送验证码',
     resendCode: '重新发送验证码',
+    sendCodeDesc: '我们将发送验证码到',
+    codeSentSuccess: '验证码已发送！请查收您的邮箱。',
+    verifying: '验证中...',
+    verifyAndCreate: '验证并创建账户',
+    resendCountdown: '{countdown}秒后可重新发送',
+    backToRegistration: '返回注册',
+    sendCodeFailed: '发送验证码失败，请重试。',
+    verifyFailed: '验证失败，请重试。',
+    codeRequired: '请输入验证码',
+    invalidCode: '请输入有效的6位验证码',
     promoCodeLabel: '优惠码',
     promoCodePlaceholder: '输入优惠码（可选）',
     promoCodeValid: '有效！注册后将获得 ${amount} 赠送余额',
@@ -531,6 +614,11 @@ export default {
         title: 'OpenCode 配置示例',
         subtitle: 'opencode.json',
         hint: '配置文件路径：~/.config/opencode/opencode.json（或 opencode.jsonc），不存在需手动创建。可使用默认 provider（openai/anthropic/google）或自定义 provider_id。API Key 支持直接配置或通过客户端 /connect 命令配置。示例仅供参考，模型与选项可按需调整。'
+      },
+      copilot: {
+        description: '将以下配置添加到对应客户端，通过 /copilot 路径代理 GitHub Copilot 请求。Claude Code 使用 Anthropic 兼容接口，Codex CLI 使用 OpenAI Responses 接口。',
+        claudeNote: '这些环境变量将在当前终端会话中生效。如需永久配置，请将其添加到 ~/.bashrc、~/.zshrc 或相应的配置文件中。',
+        codexNote: '请确保配置目录存在。macOS/Linux 用户可运行 mkdir -p ~/.codex 创建目录。'
       }
     },
     customKeyLabel: '自定义密钥',
@@ -1375,7 +1463,8 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
-        sora: 'Sora'
+        sora: 'Sora',
+        copilot: 'Copilot'
       },
       saving: '保存中...',
       noGroups: '暂无分组',
@@ -1570,6 +1659,26 @@ export default {
       revokeConfirm: "确定要撤销 '{user}' 的订阅吗？此操作无法撤销。"
     },
 
+    // Copilot 用量统计页面
+    copilotUsage: {
+      title: 'Copilot 用量',
+      description: '查看所有激活 Copilot 账号的 GitHub Copilot 配额使用情况',
+      noAccounts: '未找到活跃的 Copilot 账号',
+      fetchFailed: '查询失败',
+      noQuotaData: '暂无配额数据',
+      premiumInteractions: 'Premium 对话',
+      completions: '代码补全',
+      remaining: '剩余',
+      used: '已用',
+      percentRemaining: '剩余 {n}',
+      stats: {
+        totalAccounts: '账号总数',
+        successCount: '已加载',
+        errorCount: '失败',
+        overageCount: '超额'
+      }
+    },
+
     // Accounts Management
     accounts: {
       title: '账号管理',
@@ -1673,6 +1782,7 @@ export default {
         status: '状态',
         schedulable: '调度',
         todayStats: '今日统计',
+        copilotQuota: 'Copilot 配额',
         groups: '分组',
         usageWindows: '用量窗口',
         proxy: '代理',
@@ -1723,7 +1833,8 @@ export default {
         anthropic: 'Anthropic',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
-        sora: 'Sora'
+        sora: 'Sora',
+        copilot: 'Copilot'
       },
       types: {
         oauth: 'OAuth',
@@ -1923,9 +2034,12 @@ export default {
         wsMode: 'WS mode',
         wsModeDesc: '仅对当前 OpenAI 账号类型生效。',
         wsModeOff: '关闭（off）',
+        wsModeCtxPool: '上下文池（ctx_pool）',
+        wsModePassthrough: '透传（passthrough）',
         wsModeShared: '共享（shared）',
         wsModeDedicated: '独享（dedicated）',
         wsModeConcurrencyHint: '启用 WS mode 后，该账号并发数将作为该账号 WS 连接池上限。',
+        wsModePassthroughHint: 'passthrough 模式不使用 WS 连接池。',
         oauthResponsesWebsocketsV2: 'OAuth WebSocket Mode',
         oauthResponsesWebsocketsV2Desc:
           '仅对 OpenAI OAuth 生效。开启后该账号才允许使用 OpenAI WebSocket Mode 协议。',
@@ -2384,6 +2498,7 @@ export default {
       soraAccount: 'Sora 账号',
       geminiAccount: 'Gemini 账号',
       antigravityAccount: 'Antigravity 账号',
+      copilotAccount: 'Copilot 账号',
       inputMethod: '输入方式',
       reAuthorizedSuccess: '账号重新授权成功',
       // Test Modal
@@ -2410,6 +2525,43 @@ export default {
       soraTestTarget: '检测目标：Sora 账号能力',
       soraTestMode: '模式：连通性 + 能力探测',
       soraTestingFlow: '执行 Sora 连通性与能力检测...',
+      // Copilot 相关
+      copilot: {
+        githubToken: 'GitHub 个人访问令牌 *',
+        githubTokenHint: '具有 Copilot 访问权限的 GitHub PAT（ghp_xxx 或 github_pat_xxx）',
+        pleaseEnterToken: '请输入 GitHub 个人访问令牌',
+        planType: 'Copilot 账号类型',
+        planTypeHint: '选择你的 GitHub Copilot 订阅类型，系统将自动使用对应的 API 端点。',
+        planTypeIndividual: '个人版 (Individual)',
+        planTypeBusiness: '商业版 (Business)',
+        planTypeEnterprise: '企业版 (Enterprise)',
+        baseUrlHint: '留空自动根据账号类型选择端点；仅在使用私有/代理端点时填写。',
+        deviceOAuth: 'GitHub 登录（推荐）',
+        deviceOAuthDesc: '通过浏览器登录，支持组织 Copilot',
+        patMethod: '个人访问令牌',
+        patMethodDesc: '手动输入具有 copilot 权限的 PAT',
+        deviceOAuthIntro: '点击下方按钮开始 GitHub 认证。认证码将出现在页面上——请在打开的浏览器窗口中输入。',
+        startAuth: '开始 GitHub 认证',
+        waitingForAuth: '等待授权...',
+        openBrowser: '请在浏览器中打开以下链接并输入下方的验证码：',
+        enterCode: '请输入此验证码：',
+        authSuccess: 'GitHub 认证成功！',
+        loggedInAs: '已登录为 {login}',
+        tryAgain: '重试',
+        deviceFlowError: '设备认证流程启动失败',
+        pleaseCompleteAuth: '请先完成 GitHub 认证',
+        modelMapping: 'Copilot 模型映射',
+        modelMappingHint: '将请求模型名映射到 Copilot 实际模型名（如将 claude-sonnet-4-5 映射到 claude-sonnet-4.5）。留空则使用内置默认映射（自动横杠↔点转换）。',
+        quota: {
+          title: 'Copilot 使用量',
+          plan: '套餐类型',
+          premiumInteractions: 'Premium 对话',
+          resetDate: '下次重置',
+          unlimited: '无限制',
+          remaining: '剩余 {n} 次',
+          used: '已用 {used}/{total}'
+        }
+      },
       // Stats Modal
       viewStats: '查看统计',
       usageStatistics: '使用统计',
@@ -2444,6 +2596,34 @@ export default {
         usageTrend: '30天费用与请求趋势',
         noData: '该账号暂无使用数据'
       }
+    },
+
+    // Scheduled Tests
+    scheduledTests: {
+      title: '定时测试',
+      addPlan: '添加计划',
+      editPlan: '编辑计划',
+      deletePlan: '删除计划',
+      model: '模型',
+      cronExpression: 'Cron 表达式',
+      enabled: '启用',
+      lastRun: '上次运行',
+      nextRun: '下次运行',
+      maxResults: '最大结果数',
+      noPlans: '暂无定时测试计划',
+      confirmDelete: '确定要删除此计划吗？',
+      createSuccess: '计划创建成功',
+      updateSuccess: '计划更新成功',
+      deleteSuccess: '计划删除成功',
+      results: '测试结果',
+      noResults: '暂无测试结果',
+      responseText: '响应',
+      errorMessage: '错误',
+      success: '成功',
+      failed: '失败',
+      running: '运行中',
+      schedule: '定时测试',
+      cronHelp: '标准 5 字段 cron 表达式（例如 */30 * * * *）'
     },
 
     // Proxies Management
@@ -3691,6 +3871,15 @@ export default {
     settings: {
       title: '系统设置',
       description: '管理注册、邮箱验证、默认值和 SMTP 设置',
+      tabs: {
+        general: '通用设置',
+        security: '安全与认证',
+        users: '用户默认值',
+        gateway: '网关服务',
+        email: '邮件设置',
+      },
+      emailTabDisabledTitle: '邮箱验证未启用',
+      emailTabDisabledHint: '请在「安全与认证」选项卡中启用邮箱验证后，再配置 SMTP 设置。',
       registration: {
         title: '注册设置',
         description: '控制用户注册和验证',
@@ -3698,6 +3887,11 @@ export default {
         enableRegistrationHint: '允许新用户注册',
         emailVerification: '邮箱验证',
         emailVerificationHint: '新用户注册时需要验证邮箱',
+        emailSuffixWhitelist: '邮箱域名白名单',
+        emailSuffixWhitelistHint:
+          "仅允许使用指定域名的邮箱注册账号（例如 {'@'}qq.com, {'@'}gmail.com）",
+        emailSuffixWhitelistPlaceholder: 'example.com',
+        emailSuffixWhitelistInputHint: '留空则不限制',
         promoCode: '优惠码',
         promoCodeHint: '允许用户在注册时使用优惠码',
         invitationCode: '邀请码注册',

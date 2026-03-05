@@ -184,6 +184,8 @@ const defaultClientTab = computed(() => {
       return 'gemini'
     case 'antigravity':
       return 'claude'
+    case 'copilot':
+      return 'claude'
     default:
       return 'claude'
   }
@@ -282,6 +284,12 @@ const clientTabs = computed((): TabConfig[] => {
         { id: 'gemini', label: t('keys.useKeyModal.cliTabs.geminiCli'), icon: SparkleIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
+    case 'copilot':
+      return [
+        { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
+        { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
+        { id: 'codex-ws', label: t('keys.useKeyModal.cliTabs.codexCliWs'), icon: TerminalIcon }
+      ]
     default:
       return [
         { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
@@ -321,6 +329,8 @@ const platformDescription = computed(() => {
       return t('keys.useKeyModal.gemini.description')
     case 'antigravity':
       return t('keys.useKeyModal.antigravity.description')
+    case 'copilot':
+      return t('keys.useKeyModal.copilot.description')
     default:
       return t('keys.useKeyModal.description')
   }
@@ -338,6 +348,10 @@ const platformNote = computed(() => {
       return activeClientTab.value === 'claude'
         ? t('keys.useKeyModal.antigravity.claudeNote')
         : t('keys.useKeyModal.antigravity.geminiNote')
+    case 'copilot':
+      return activeClientTab.value === 'claude'
+        ? t('keys.useKeyModal.copilot.claudeNote')
+        : t('keys.useKeyModal.copilot.codexNote')
     default:
       return t('keys.useKeyModal.note')
   }
@@ -381,6 +395,8 @@ const currentFiles = computed((): FileConfig[] => {
     const trimmed = baseRoot.replace(/\/+$/, '')
     return trimmed.endsWith('/v1beta') ? trimmed : `${trimmed}/v1beta`
   })()
+  // copilot uses /copilot path prefix (no /v1 suffix needed — endpoints are /copilot/v1/messages and /copilot)
+  const copilotBase = `${baseRoot}/copilot`
 
   if (activeClientTab.value === 'opencode') {
     switch (props.platform) {
@@ -413,12 +429,21 @@ const currentFiles = computed((): FileConfig[] => {
         return [generateGeminiCliContent(`${baseUrl}/antigravity`, apiKey)]
       }
       return generateAnthropicFiles(`${baseUrl}/antigravity`, apiKey)
+    case 'copilot':
+      if (activeClientTab.value === 'codex-ws') {
+        return generateOpenAIWsFiles(copilotBase, apiKey)
+      }
+      if (activeClientTab.value === 'codex') {
+        return generateOpenAIFiles(copilotBase, apiKey)
+      }
+      // claude tab: use Anthropic-compatible endpoint at /copilot/v1
+      return generateAnthropicFiles(ensureV1(copilotBase), apiKey, true)
     default:
       return generateAnthropicFiles(baseUrl, apiKey)
   }
 })
 
-function generateAnthropicFiles(baseUrl: string, apiKey: string): FileConfig[] {
+function generateAnthropicFiles(baseUrl: string, apiKey: string, richSettings = false): FileConfig[] {
   let path: string
   let content: string
 
@@ -443,7 +468,42 @@ $env:ANTHROPIC_AUTH_TOKEN="${apiKey}"`
       content = ''
   }
 
-  return [{ path, content }]
+  const vscodeSettingsPath = activeTab.value === 'unix'
+    ? '~/.claude/settings.json'
+    : '%userprofile%\\.claude\\settings.json'
+
+  let vscodeContent: string
+  if (richSettings) {
+    vscodeContent = JSON.stringify({
+      "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+      "alwaysThinkingEnabled": true,
+      "env": {
+        "ANTHROPIC_AUTH_TOKEN": apiKey,
+        "ANTHROPIC_BASE_URL": baseUrl,
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
+        "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+        "ANTHROPIC_REASONING_MODEL": "claude-opus-4-6"
+      },
+      "includeCoAuthoredBy": false,
+      "model": "claude-sonnet-4-6",
+      "skipDangerousModePermissionPrompt": true
+    }, null, 2)
+  } else {
+    vscodeContent = `{
+  "env": {
+    "ANTHROPIC_BASE_URL": "${baseUrl}",
+    "ANTHROPIC_AUTH_TOKEN": "${apiKey}",
+    "CLAUDE_CODE_ATTRIBUTION_HEADER": "0"
+  }
+}`
+  }
+
+  return [
+    { path, content },
+    { path: vscodeSettingsPath, content: vscodeContent, hint: 'VSCode Claude Code' }
+  ]
 }
 
 function generateGeminiCliContent(baseUrl: string, apiKey: string): FileConfig {
@@ -496,16 +556,16 @@ function generateOpenAIFiles(baseUrl: string, apiKey: string): FileConfig[] {
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
 
   // config.toml content
-  const configContent = `model_provider = "sub2api"
+  const configContent = `model_provider = "OpenAI"
 model = "gpt-5.3-codex"
-model_reasoning_effort = "high"
-network_access = "enabled"
+review_model = "gpt-5.3-codex"
+model_reasoning_effort = "xhigh"
 disable_response_storage = true
+network_access = "enabled"
 windows_wsl_setup_acknowledged = true
-model_verbosity = "high"
 
-[model_providers.sub2api]
-name = "sub2api"
+[model_providers.OpenAI]
+name = "OpenAI"
 base_url = "${baseUrl}"
 wire_api = "responses"
 requires_openai_auth = true`
@@ -533,16 +593,16 @@ function generateOpenAIWsFiles(baseUrl: string, apiKey: string): FileConfig[] {
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
 
   // config.toml content with WebSocket v2
-  const configContent = `model_provider = "sub2api"
+  const configContent = `model_provider = "OpenAI"
 model = "gpt-5.3-codex"
-model_reasoning_effort = "high"
-network_access = "enabled"
+review_model = "gpt-5.3-codex"
+model_reasoning_effort = "xhigh"
 disable_response_storage = true
+network_access = "enabled"
 windows_wsl_setup_acknowledged = true
-model_verbosity = "high"
 
-[model_providers.sub2api]
-name = "sub2api"
+[model_providers.OpenAI]
+name = "OpenAI"
 base_url = "${baseUrl}"
 wire_api = "responses"
 supports_websockets = true

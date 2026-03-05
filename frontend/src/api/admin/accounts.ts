@@ -36,6 +36,7 @@ export async function list(
     status?: string
     group?: string
     search?: string
+    lite?: string
   },
   options?: {
     signal?: AbortSignal
@@ -66,6 +67,7 @@ export async function listWithEtag(
     type?: string
     status?: string
     search?: string
+    lite?: string
   },
   options?: {
     signal?: AbortSignal
@@ -515,6 +517,59 @@ export async function getAntigravityDefaultModelMapping(): Promise<Record<string
 }
 
 /**
+ * Copilot quota info returned by the backend
+ */
+export interface CopilotQuotaDetail {
+  entitlement?: number
+  overage_permitted?: boolean
+  used?: number
+  unlimited?: boolean
+  remaining?: number
+  overage_count?: number
+  percent_remaining?: number
+}
+
+export interface CopilotQuotaInfo {
+  plan?: string
+  plan_type?: string
+  sku?: string
+  chat?: CopilotQuotaDetail
+  completions?: CopilotQuotaDetail
+  premium_interactions?: CopilotQuotaDetail
+  quota_reset_date?: string
+}
+
+export interface CopilotAccountQuotaSummary {
+  account_id: number
+  account_name: string
+  github_login?: string
+  status: string
+  quota_info?: CopilotQuotaInfo
+  error?: string
+}
+
+/**
+ * Get Copilot quota information for an account
+ * @param id - Account ID
+ * @returns Copilot quota info
+ */
+export async function getCopilotQuota(id: number): Promise<CopilotQuotaInfo> {
+  const { data } = await apiClient.get<CopilotQuotaInfo>(`/admin/accounts/${id}/copilot-quota`)
+  return data
+}
+
+/**
+ * Get Copilot usage summary for all active Copilot accounts
+ * @returns Array of account quota summaries
+ */
+export async function getCopilotUsageSummary(): Promise<CopilotAccountQuotaSummary[]> {
+  const { data } = await apiClient.get<CopilotAccountQuotaSummary[]>(
+    '/admin/accounts/copilot-usage-summary'
+  )
+  return data
+}
+
+/**
  * Refresh OpenAI token using refresh token
  * @param refreshToken - The refresh token
  * @param proxyId - Optional proxy ID
@@ -589,7 +644,9 @@ export const accountsAPI = {
   syncFromCrs,
   exportData,
   importData,
-  getAntigravityDefaultModelMapping
+  getAntigravityDefaultModelMapping,
+  getCopilotQuota,
+  getCopilotUsageSummary
 }
 
 export default accountsAPI

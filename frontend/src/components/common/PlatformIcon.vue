@@ -25,6 +25,10 @@
       d="M12 2.5l2.1 4.7 5.1.5-3.9 3.4 1.2 5-4.5-2.6-4.5 2.6 1.2-5-3.9-3.4 5.1-.5L12 2.5z"
     />
   </svg>
+  <!-- Copilot logo (GitHub Copilot) -->
+  <svg v-else-if="platform === 'copilot'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+  </svg>
   <!-- Fallback: generic platform icon -->
   <svg v-else :class="sizeClass" fill="currentColor" viewBox="0 0 24 24">
     <path

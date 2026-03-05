@@ -26,8 +26,8 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
-      <!-- API Key fields (only for apikey type) -->
-      <div v-if="account.type === 'apikey'" class="space-y-4">
+      <!-- API Key fields (only for apikey type, except Copilot) -->
+      <div v-if="account.type === 'apikey' && account.platform !== 'copilot'" class="space-y-4">
         <div>
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
           <input
@@ -351,7 +351,126 @@
 
       </div>
 
-      <!-- Upstream fields (only for upstream type) -->
+      <!-- Copilot credential fields (apikey type, copilot platform) -->
+      <div v-if="account.type === 'apikey' && account.platform === 'copilot'" class="space-y-4">
+        <!-- Plan type selector -->
+        <div>
+          <label class="input-label">{{ t('admin.accounts.copilot.planType') }}</label>
+          <div class="mt-2 grid grid-cols-3 gap-2">
+            <button
+              v-for="plan in [
+                { value: 'individual', label: t('admin.accounts.copilot.planTypeIndividual') },
+                { value: 'business',   label: t('admin.accounts.copilot.planTypeBusiness') },
+                { value: 'enterprise', label: t('admin.accounts.copilot.planTypeEnterprise') },
+              ]"
+              :key="plan.value"
+              type="button"
+              @click="copilotEditPlanType = plan.value"
+              :class="[
+                'rounded-lg border-2 px-3 py-2 text-sm font-medium transition-all text-center',
+                copilotEditPlanType === plan.value
+                  ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300'
+                  : 'border-gray-200 text-gray-600 hover:border-primary-300 dark:border-dark-600 dark:text-gray-400 dark:hover:border-primary-700'
+              ]"
+            >
+              {{ plan.label }}
+            </button>
+          </div>
+          <p class="input-hint mt-1.5">{{ t('admin.accounts.copilot.planTypeHint') }}</p>
+        </div>
+        <!-- Advanced: custom base URL (collapsed by default) -->
+        <details class="rounded-lg border border-gray-200 dark:border-dark-600">
+          <summary class="cursor-pointer select-none px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.baseUrl') }} ({{ t('common.advanced') }})
+          </summary>
+          <div class="px-3 pb-3 pt-1">
+            <input
+              v-model="editBaseUrl"
+              type="text"
+              class="input"
+              placeholder="https://api.githubcopilot.com"
+            />
+            <p class="input-hint">{{ t('admin.accounts.copilot.baseUrlHint') }}</p>
+          </div>
+        </details>
+        <div>
+          <label class="input-label">{{ t('admin.accounts.copilot.githubToken') }}</label>
+          <input
+            v-model="editGithubToken"
+            type="password"
+            class="input font-mono"
+            placeholder="ghp_xxxxxxxxxxxx / github_pat_xxxxxxxxxxxx"
+          />
+          <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
+        </div>
+      </div>
+
+      <!-- Copilot model mapping (optional override of built-in dash→dot conversion) -->
+      <div v-if="account.platform === 'copilot'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <label class="input-label">{{ t('admin.accounts.copilot.modelMapping') }}</label>
+
+        <div class="mb-3 rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+          <p class="text-xs text-blue-700 dark:text-blue-400">
+            {{ t('admin.accounts.copilot.modelMappingHint') }}
+          </p>
+        </div>
+
+        <div v-if="copilotModelMappings.length > 0" class="mb-3 space-y-2">
+          <div
+            v-for="(mapping, index) in copilotModelMappings"
+            :key="getCopilotModelMappingKey(mapping)"
+            class="flex items-center gap-2"
+          >
+            <input
+              v-model="mapping.from"
+              type="text"
+              class="input flex-1"
+              :placeholder="t('admin.accounts.requestModel')"
+            />
+            <svg class="h-4 w-4 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+            </svg>
+            <input
+              v-model="mapping.to"
+              type="text"
+              class="input flex-1"
+              :placeholder="t('admin.accounts.actualModel')"
+            />
+            <button
+              type="button"
+              @click="removeCopilotModelMapping(index)"
+              class="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+            >
+              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          @click="addCopilotModelMapping"
+          class="mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+        >
+          <svg class="mr-1 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          {{ t('admin.accounts.addMapping') }}
+        </button>
+
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="preset in copilotPresetMappings"
+            :key="preset.label"
+            type="button"
+            @click="addCopilotPresetMapping(preset.from, preset.to)"
+            :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
+          >
+            + {{ preset.label }}
+          </button>
+        </div>
+      </div>
       <div v-if="account.type === 'upstream'" class="space-y-4">
         <div>
           <label class="input-label">{{ t('admin.accounts.upstream.baseUrl') }}</label>
@@ -708,7 +827,7 @@
         </div>
       </div>
 
-      <!-- OpenAI WS Mode 三态（off/shared/dedicated） -->
+      <!-- OpenAI WS Mode 三态（off/ctx_pool/passthrough） -->
       <div
         v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'apikey')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
@@ -720,7 +839,7 @@
               {{ t('admin.accounts.openai.wsModeDesc') }}
             </p>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.openai.wsModeConcurrencyHint') }}
+              {{ t(openAIWSModeConcurrencyHintKey) }}
             </p>
           </div>
           <div class="w-52">
@@ -1273,10 +1392,11 @@ import { applyInterceptWarmup } from '@/components/account/credentialsBuilder'
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import {
-  OPENAI_WS_MODE_DEDICATED,
+  // OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
-  OPENAI_WS_MODE_SHARED,
+  OPENAI_WS_MODE_PASSTHROUGH,
   isOpenAIWSModeEnabled,
+  resolveOpenAIWSModeConcurrencyHintKey,
   type OpenAIWSMode,
   resolveOpenAIWSModeFromExtra
 } from '@/utils/openaiWsMode'
@@ -1309,10 +1429,19 @@ const baseUrlHint = computed(() => {
   if (!props.account) return t('admin.accounts.baseUrlHint')
   if (props.account.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
   if (props.account.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
+  if (props.account.platform === 'copilot') return t('admin.accounts.copilot.baseUrlHint')
   return t('admin.accounts.baseUrlHint')
 })
 
 const antigravityPresetMappings = computed(() => getPresetMappingsByPlatform('antigravity'))
+
+const copilotPresetMappings = computed(() => [
+  { label: 'Sonnet 4.5', from: 'claude-sonnet-4-5', to: 'claude-sonnet-4.5', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:hover:bg-purple-800/40' },
+  { label: 'Sonnet 4.6', from: 'claude-sonnet-4-6', to: 'claude-sonnet-4.6', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:hover:bg-purple-800/40' },
+  { label: 'Opus 4.5', from: 'claude-opus-4-5', to: 'claude-opus-4.5', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-800/40' },
+  { label: 'Opus 4.6', from: 'claude-opus-4-6', to: 'claude-opus-4.6', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-800/40' },
+  { label: 'Haiku 4.5', from: 'claude-haiku-4-5', to: 'claude-haiku-4.5', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-800/40' },
+])
 
 // Model mapping type
 interface ModelMapping {
@@ -1331,6 +1460,8 @@ interface TempUnschedRuleForm {
 const submitting = ref(false)
 const editBaseUrl = ref('https://api.anthropic.com')
 const editApiKey = ref('')
+const editGithubToken = ref('')
+const copilotEditPlanType = ref('individual') // individual | business | enterprise
 const modelMappings = ref<ModelMapping[]>([])
 const modelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
 const allowedModels = ref<string[]>([])
@@ -1343,10 +1474,12 @@ const mixedScheduling = ref(false) // For antigravity accounts: enable mixed sch
 const antigravityModelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
 const antigravityWhitelistModels = ref<string[]>([])
 const antigravityModelMappings = ref<ModelMapping[]>([])
+const copilotModelMappings = ref<ModelMapping[]>([])
 const tempUnschedEnabled = ref(false)
 const tempUnschedRules = ref<TempUnschedRuleForm[]>([])
 const getModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-model-mapping')
 const getAntigravityModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-antigravity-model-mapping')
+const getCopilotModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-copilot-model-mapping')
 const getTempUnschedRuleKey = createStableObjectKeyResolver<TempUnschedRuleForm>('edit-temp-unsched-rule')
 
 const showMixedChannelWarning = ref(false)
@@ -1387,8 +1520,9 @@ const codexCLIOnlyEnabled = ref(false)
 const anthropicPassthroughEnabled = ref(false)
 const openAIWSModeOptions = computed(() => [
   { value: OPENAI_WS_MODE_OFF, label: t('admin.accounts.openai.wsModeOff') },
-  { value: OPENAI_WS_MODE_SHARED, label: t('admin.accounts.openai.wsModeShared') },
-  { value: OPENAI_WS_MODE_DEDICATED, label: t('admin.accounts.openai.wsModeDedicated') }
+  // TODO: ctx_pool 选项暂时隐藏，待测试完成后恢复
+  // { value: OPENAI_WS_MODE_CTX_POOL, label: t('admin.accounts.openai.wsModeCtxPool') },
+  { value: OPENAI_WS_MODE_PASSTHROUGH, label: t('admin.accounts.openai.wsModePassthrough') }
 ])
 const openaiResponsesWebSocketV2Mode = computed({
   get: () => {
@@ -1405,6 +1539,9 @@ const openaiResponsesWebSocketV2Mode = computed({
     openaiOAuthResponsesWebSocketV2Mode.value = mode
   }
 })
+const openAIWSModeConcurrencyHintKey = computed(() =>
+  resolveOpenAIWSModeConcurrencyHintKey(openaiResponsesWebSocketV2Mode.value)
+)
 const isOpenAIModelRestrictionDisabled = computed(() =>
   props.account?.platform === 'openai' && openaiPassthroughEnabled.value
 )
@@ -1445,6 +1582,7 @@ const tempUnschedPresets = computed(() => [
 const defaultBaseUrl = computed(() => {
   if (props.account?.platform === 'openai' || props.account?.platform === 'sora') return 'https://api.openai.com'
   if (props.account?.platform === 'gemini') return 'https://generativelanguage.googleapis.com'
+  if (props.account?.platform === 'copilot') return 'https://api.githubcopilot.com'
   return 'https://api.anthropic.com'
 })
 
@@ -1576,13 +1714,39 @@ watch(
       // Initialize API Key fields for apikey type
       if (newAccount.type === 'apikey' && newAccount.credentials) {
         const credentials = newAccount.credentials as Record<string, unknown>
-        const platformDefaultUrl =
-          newAccount.platform === 'openai' || newAccount.platform === 'sora'
-            ? 'https://api.openai.com'
-            : newAccount.platform === 'gemini'
-              ? 'https://generativelanguage.googleapis.com'
-              : 'https://api.anthropic.com'
-        editBaseUrl.value = (credentials.base_url as string) || platformDefaultUrl
+
+        // Copilot uses github_token instead of api_key
+        if (newAccount.platform === 'copilot') {
+          // Load plan_type (new field); fall back to inferring from legacy base_url
+          const savedPlanType = credentials.plan_type as string | undefined
+          const legacyBaseUrl = credentials.base_url as string | undefined
+          if (savedPlanType && ['individual', 'business', 'enterprise'].includes(savedPlanType)) {
+            copilotEditPlanType.value = savedPlanType
+          } else if (legacyBaseUrl?.includes('business.githubcopilot.com')) {
+            copilotEditPlanType.value = 'business'
+          } else if (legacyBaseUrl?.includes('enterprise.githubcopilot.com')) {
+            copilotEditPlanType.value = 'enterprise'
+          } else {
+            copilotEditPlanType.value = 'individual'
+          }
+          editBaseUrl.value = legacyBaseUrl || ''
+          editGithubToken.value = '' // never show existing token
+          // Load copilot model mapping
+          const rawCopilotMapping = credentials.model_mapping as Record<string, string> | undefined
+          if (rawCopilotMapping && typeof rawCopilotMapping === 'object') {
+            copilotModelMappings.value = Object.entries(rawCopilotMapping).map(([from, to]) => ({ from, to }))
+          } else {
+            copilotModelMappings.value = []
+          }
+        } else {
+          const platformDefaultUrl =
+            newAccount.platform === 'openai' || newAccount.platform === 'sora'
+              ? 'https://api.openai.com'
+              : newAccount.platform === 'gemini'
+                ? 'https://generativelanguage.googleapis.com'
+                : 'https://api.anthropic.com'
+          editBaseUrl.value = (credentials.base_url as string) || platformDefaultUrl
+        }
 
         // Load model mappings and detect mode
         const existingMappings = credentials.model_mapping as Record<string, string> | undefined
@@ -1627,15 +1791,19 @@ watch(
             ? 'https://api.openai.com'
             : newAccount.platform === 'gemini'
               ? 'https://generativelanguage.googleapis.com'
-              : 'https://api.anthropic.com'
+              : newAccount.platform === 'copilot'
+                ? 'https://api.githubcopilot.com'
+                : 'https://api.anthropic.com'
         editBaseUrl.value = platformDefaultUrl
         modelRestrictionMode.value = 'whitelist'
         modelMappings.value = []
         allowedModels.value = []
+        copilotModelMappings.value = []
         customErrorCodesEnabled.value = false
         selectedErrorCodes.value = []
       }
       editApiKey.value = ''
+      editGithubToken.value = ''
     }
   },
   { immediate: true }
@@ -1674,6 +1842,23 @@ const addAntigravityPresetMapping = (from: string, to: string) => {
     return
   }
   antigravityModelMappings.value.push({ from, to })
+}
+
+const addCopilotModelMapping = () => {
+  copilotModelMappings.value.push({ from: '', to: '' })
+}
+
+const removeCopilotModelMapping = (index: number) => {
+  copilotModelMappings.value.splice(index, 1)
+}
+
+const addCopilotPresetMapping = (from: string, to: string) => {
+  const exists = copilotModelMappings.value.some((m) => m.from === from)
+  if (exists) {
+    appStore.showInfo(t('admin.accounts.mappingExists', { model: from }))
+    return
+  }
+  copilotModelMappings.value.push({ from, to })
 }
 
 // Error code toggle helper
@@ -2050,48 +2235,79 @@ const handleSubmit = async () => {
     if (props.account.type === 'apikey') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newBaseUrl = editBaseUrl.value.trim() || defaultBaseUrl.value
-      const shouldApplyModelMapping = !(props.account.platform === 'openai' && openaiPassthroughEnabled.value)
 
-      // Always update credentials for apikey type to handle model mapping changes
-      const newCredentials: Record<string, unknown> = {
-        base_url: newBaseUrl
-      }
-
-      // Handle API key
-      if (editApiKey.value.trim()) {
-        // User provided a new API key
-        newCredentials.api_key = editApiKey.value.trim()
-      } else if (currentCredentials.api_key) {
-        // Preserve existing api_key
-        newCredentials.api_key = currentCredentials.api_key
-      } else {
-        appStore.showError(t('admin.accounts.apiKeyIsRequired'))
-        return
-      }
-
-      // Add model mapping if configured（OpenAI 开启自动透传时保留现有映射，不再编辑）
-      if (shouldApplyModelMapping) {
-        const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
-        if (modelMapping) {
-          newCredentials.model_mapping = modelMapping
+      // Copilot uses github_token instead of api_key
+      if (props.account.platform === 'copilot') {
+        const newCredentials: Record<string, unknown> = {
+          plan_type: copilotEditPlanType.value || 'individual'
         }
-      } else if (currentCredentials.model_mapping) {
-        newCredentials.model_mapping = currentCredentials.model_mapping
-      }
+        // Only persist base_url if the user explicitly filled in a custom URL
+        const customBaseUrl = editBaseUrl.value.trim()
+        if (customBaseUrl) {
+          newCredentials.base_url = customBaseUrl
+        }
+        if (editGithubToken.value.trim()) {
+          newCredentials.github_token = editGithubToken.value.trim()
+        } else if (currentCredentials.github_token) {
+          newCredentials.github_token = currentCredentials.github_token
+        } else {
+          appStore.showError(t('admin.accounts.copilot.pleaseEnterToken'))
+          return
+        }
+        // Save copilot model mapping if configured
+        const copilotMapping = buildModelMappingObject('mapping', [], copilotModelMappings.value)
+        if (copilotMapping) {
+          newCredentials.model_mapping = copilotMapping
+        }
+        applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
+        if (!applyTempUnschedConfig(newCredentials)) {
+          return
+        }
+        updatePayload.credentials = newCredentials
+      } else {
+        const shouldApplyModelMapping = !(props.account.platform === 'openai' && openaiPassthroughEnabled.value)
 
-      // Add custom error codes if enabled
-      if (customErrorCodesEnabled.value) {
-        newCredentials.custom_error_codes_enabled = true
-        newCredentials.custom_error_codes = [...selectedErrorCodes.value]
-      }
+        // Always update credentials for apikey type to handle model mapping changes
+        const newCredentials: Record<string, unknown> = {
+          base_url: newBaseUrl
+        }
 
-      // Add intercept warmup requests setting
-      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      if (!applyTempUnschedConfig(newCredentials)) {
-        return
-      }
+        // Handle API key
+        if (editApiKey.value.trim()) {
+          // User provided a new API key
+          newCredentials.api_key = editApiKey.value.trim()
+        } else if (currentCredentials.api_key) {
+          // Preserve existing api_key
+          newCredentials.api_key = currentCredentials.api_key
+        } else {
+          appStore.showError(t('admin.accounts.apiKeyIsRequired'))
+          return
+        }
 
-      updatePayload.credentials = newCredentials
+        // Add model mapping if configured（OpenAI 开启自动透传时保留现有映射，不再编辑）
+        if (shouldApplyModelMapping) {
+          const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+          if (modelMapping) {
+            newCredentials.model_mapping = modelMapping
+          }
+        } else if (currentCredentials.model_mapping) {
+          newCredentials.model_mapping = currentCredentials.model_mapping
+        }
+
+        // Add custom error codes if enabled
+        if (customErrorCodesEnabled.value) {
+          newCredentials.custom_error_codes_enabled = true
+          newCredentials.custom_error_codes = [...selectedErrorCodes.value]
+        }
+
+        // Add intercept warmup requests setting
+        applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
+        if (!applyTempUnschedConfig(newCredentials)) {
+          return
+        }
+
+        updatePayload.credentials = newCredentials
+      }
     } else if (props.account.type === 'upstream') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newCredentials: Record<string, unknown> = { ...currentCredentials }
@@ -2248,10 +2464,13 @@ const handleSubmit = async () => {
       const currentExtra = (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }
       const hadCodexCLIOnlyEnabled = currentExtra.codex_cli_only === true
-      newExtra.openai_oauth_responses_websockets_v2_mode = openaiOAuthResponsesWebSocketV2Mode.value
-      newExtra.openai_apikey_responses_websockets_v2_mode = openaiAPIKeyResponsesWebSocketV2Mode.value
-      newExtra.openai_oauth_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiOAuthResponsesWebSocketV2Mode.value)
-      newExtra.openai_apikey_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiAPIKeyResponsesWebSocketV2Mode.value)
+      if (props.account.type === 'oauth') {
+        newExtra.openai_oauth_responses_websockets_v2_mode = openaiOAuthResponsesWebSocketV2Mode.value
+        newExtra.openai_oauth_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiOAuthResponsesWebSocketV2Mode.value)
+      } else if (props.account.type === 'apikey') {
+        newExtra.openai_apikey_responses_websockets_v2_mode = openaiAPIKeyResponsesWebSocketV2Mode.value
+        newExtra.openai_apikey_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiAPIKeyResponsesWebSocketV2Mode.value)
+      }
       delete newExtra.responses_websockets_v2_enabled
       delete newExtra.openai_ws_enabled
       if (openaiPassthroughEnabled.value) {

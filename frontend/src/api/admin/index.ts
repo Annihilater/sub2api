@@ -22,6 +22,8 @@ import opsAPI from './ops'
 import errorPassthroughAPI from './errorPassthrough'
 import dataManagementAPI from './dataManagement'
 import apiKeysAPI from './apiKeys'
+import scheduledTestsAPI from './scheduledTests'
+import copilotAPI from './copilot'
 
 /**
  * Unified admin API object for convenient access
@@ -45,7 +47,9 @@ export const adminAPI = {
   ops: opsAPI,
   errorPassthrough: errorPassthroughAPI,
   dataManagement: dataManagementAPI,
-  apiKeys: apiKeysAPI
+  apiKeys: apiKeysAPI,
+  scheduledTests: scheduledTestsAPI,
+  copilot: copilotAPI
 }
 
 export {
@@ -67,7 +71,9 @@ export {
   opsAPI,
   errorPassthroughAPI,
   dataManagementAPI,
-  apiKeysAPI
+  apiKeysAPI,
+  scheduledTestsAPI,
+  copilotAPI
 }
 
 export default adminAPI
@@ -76,3 +82,4 @@ export default adminAPI
 export type { BalanceHistoryItem } from './users'
 export type { ErrorPassthroughRule, CreateRuleRequest, UpdateRuleRequest } from './errorPassthrough'
 export type { BackupAgentHealth, DataManagementConfig } from './dataManagement'
+export type { CopilotQuotaDetail, CopilotQuotaInfo, CopilotAccountQuotaSummary } from './accounts'

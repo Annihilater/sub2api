@@ -43,6 +43,9 @@ func RegisterAdminRoutes(
 		// Antigravity OAuth
 		registerAntigravityOAuthRoutes(admin, h)
 
+		// Copilot OAuth (Device Flow)
+		registerCopilotOAuthRoutes(admin, h)
+
 		// 代理管理
 		registerProxyRoutes(admin, h)
 
@@ -78,6 +81,9 @@ func RegisterAdminRoutes(
 
 		// API Key 管理
 		registerAdminAPIKeyRoutes(admin, h)
+
+		// 定时测试计划
+		registerScheduledTestRoutes(admin, h)
 	}
 }
 
@@ -168,6 +174,7 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		ops.GET("/system-logs/health", h.Admin.Ops.GetSystemLogIngestionHealth)
 
 		// Dashboard (vNext - raw path for MVP)
+		ops.GET("/dashboard/snapshot-v2", h.Admin.Ops.GetDashboardSnapshotV2)
 		ops.GET("/dashboard/overview", h.Admin.Ops.GetDashboardOverview)
 		ops.GET("/dashboard/throughput-trend", h.Admin.Ops.GetDashboardThroughputTrend)
 		ops.GET("/dashboard/latency-histogram", h.Admin.Ops.GetDashboardLatencyHistogram)
@@ -180,6 +187,7 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 func registerDashboardRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	dashboard := admin.Group("/dashboard")
 	{
+		dashboard.GET("/snapshot-v2", h.Admin.Dashboard.GetSnapshotV2)
 		dashboard.GET("/stats", h.Admin.Dashboard.GetStats)
 		dashboard.GET("/realtime", h.Admin.Dashboard.GetRealtimeMetrics)
 		dashboard.GET("/trend", h.Admin.Dashboard.GetUsageTrend)
@@ -251,6 +259,8 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		accounts.DELETE("/:id/temp-unschedulable", h.Admin.Account.ClearTempUnschedulable)
 		accounts.POST("/:id/schedulable", h.Admin.Account.SetSchedulable)
 		accounts.GET("/:id/models", h.Admin.Account.GetAvailableModels)
+		accounts.GET("/:id/copilot-quota", h.Admin.Account.GetCopilotQuota)
+		accounts.GET("/copilot-usage-summary", h.Admin.Account.GetCopilotUsageSummary)
 		accounts.POST("/batch", h.Admin.Account.BatchCreate)
 		accounts.GET("/data", h.Admin.Account.ExportData)
 		accounts.POST("/data", h.Admin.Account.ImportData)
@@ -322,6 +332,14 @@ func registerAntigravityOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers)
 		antigravity.POST("/oauth/auth-url", h.Admin.AntigravityOAuth.GenerateAuthURL)
 		antigravity.POST("/oauth/exchange-code", h.Admin.AntigravityOAuth.ExchangeCode)
 		antigravity.POST("/oauth/refresh-token", h.Admin.AntigravityOAuth.RefreshToken)
+	}
+}
+
+func registerCopilotOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	copilot := admin.Group("/copilot")
+	{
+		copilot.POST("/oauth/device-code", h.Admin.CopilotOAuth.StartDeviceFlow)
+		copilot.POST("/oauth/poll", h.Admin.CopilotOAuth.PollDeviceFlow)
 	}
 }
 
@@ -474,6 +492,18 @@ func registerUserAttributeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		attrs.PUT("/:id", h.Admin.UserAttribute.UpdateDefinition)
 		attrs.DELETE("/:id", h.Admin.UserAttribute.DeleteDefinition)
 	}
+}
+
+func registerScheduledTestRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	plans := admin.Group("/scheduled-test-plans")
+	{
+		plans.POST("", h.Admin.ScheduledTest.Create)
+		plans.PUT("/:id", h.Admin.ScheduledTest.Update)
+		plans.DELETE("/:id", h.Admin.ScheduledTest.Delete)
+		plans.GET("/:id/results", h.Admin.ScheduledTest.ListResults)
+	}
+	// Nested under accounts
+	admin.GET("/accounts/:id/scheduled-test-plans", h.Admin.ScheduledTest.ListByAccount)
 }
 
 func registerErrorPassthroughRoutes(admin *gin.RouterGroup, h *handler.Handlers) {

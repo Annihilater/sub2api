@@ -446,9 +446,10 @@ func TestAPIContracts(t *testing.T) {
 			setup: func(t *testing.T, deps *contractDeps) {
 				t.Helper()
 				deps.settingRepo.SetAll(map[string]string{
-					service.SettingKeyRegistrationEnabled: "true",
-					service.SettingKeyEmailVerifyEnabled:  "false",
-					service.SettingKeyPromoCodeEnabled:    "true",
+					service.SettingKeyRegistrationEnabled:              "true",
+					service.SettingKeyEmailVerifyEnabled:               "false",
+					service.SettingKeyRegistrationEmailSuffixWhitelist: "[]",
+					service.SettingKeyPromoCodeEnabled:                 "true",
 
 					service.SettingKeySMTPHost:     "smtp.example.com",
 					service.SettingKeySMTPPort:     "587",
@@ -487,6 +488,7 @@ func TestAPIContracts(t *testing.T) {
 				"data": {
 					"registration_enabled": true,
 					"email_verify_enabled": false,
+					"registration_email_suffix_whitelist": [],
 					"promo_code_enabled": true,
 					"password_reset_enabled": false,
 					"totp_enabled": false,
@@ -646,7 +648,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService)
 	adminSettingHandler := adminhandler.NewSettingHandler(settingService, nil, nil, nil, nil)
-	adminAccountHandler := adminhandler.NewAccountHandler(adminService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	adminAccountHandler := adminhandler.NewAccountHandler(adminService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	jwtAuth := func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{
