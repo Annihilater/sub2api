@@ -267,7 +267,7 @@ func translateAnthropicToOpenAI(body []byte, _ map[string]string) ([]byte, error
 	}
 
 	openAIReq := openAIChatRequest{
-		Model:       req.Model,
+		Model:       normalizeCopilotModel(req.Model),
 		Messages:    buildOpenAIMessages(req),
 		MaxTokens:   req.MaxTokens,
 		Stop:        req.StopSequences,
@@ -282,6 +282,39 @@ func translateAnthropicToOpenAI(body []byte, _ map[string]string) ([]byte, error
 	}
 
 	return json.Marshal(openAIReq)
+}
+
+// normalizeCopilotModel converts Anthropic-style Claude model names (dashes) to
+// the Copilot API format (dots).
+//
+// CC sends model names like "claude-sonnet-4-6" (dashes). Copilot API expects
+// "claude-sonnet-4.6" (dots). Only the version suffix is affected; GPT and
+// other non-Claude models are returned unchanged.
+//
+// Examples:
+//
+//	"claude-sonnet-4-6"          → "claude-sonnet-4.6"
+//	"claude-sonnet-4-5-20250929" → "claude-sonnet-4.5"
+//	"claude-opus-4-6"            → "claude-opus-4.6"
+//	"gpt-4o"                     → "gpt-4o"
+func normalizeCopilotModel(model string) string {
+	prefixes := []string{
+		"claude-sonnet-4-",
+		"claude-opus-4-",
+		"claude-haiku-4-",
+		"claude-sonnet-3-",
+		"claude-opus-3-",
+		"claude-haiku-3-",
+	}
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(model, prefix) {
+			rest := model[len(prefix):]
+			minor := strings.SplitN(rest, "-", 2)[0]
+			base := prefix[:len(prefix)-1] // strip trailing "-"
+			return base + "." + minor
+		}
+	}
+	return model
 }
 
 // buildOpenAIMessages converts the Anthropic messages array (plus optional system
