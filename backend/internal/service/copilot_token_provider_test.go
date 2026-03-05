@@ -17,11 +17,11 @@ func mockCopilotTokenServer(t *testing.T) *httptest.Server {
 		auth := r.Header.Get("Authorization")
 		if auth != "token ghp_valid" {
 			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"message":"Bad credentials"}`))
+			_, _ = w.Write([]byte(`{"message":"Bad credentials"}`))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"token":"copilot-test-token","expires_at":` +
+		_, _ = w.Write([]byte(`{"token":"copilot-test-token","expires_at":` +
 			`2000000000,"refresh_in":1500}`))
 	}))
 }

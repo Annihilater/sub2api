@@ -21,7 +21,7 @@ func TestExchangeToken_Success(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(TokenExchangeResponse{
+		_ = json.NewEncoder(w).Encode(TokenExchangeResponse{
 			Token:     "copilot-token-abc",
 			ExpiresAt: 1800000000,
 			RefreshIn: 1500,
@@ -47,7 +47,7 @@ func TestExchangeToken_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var tokenResp TokenExchangeResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
@@ -65,7 +65,7 @@ func TestExchangeToken_Success(t *testing.T) {
 func TestExchangeToken_HTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"message":"Bad credentials"}`))
+		_, _ = w.Write([]byte(`{"message":"Bad credentials"}`))
 	}))
 	defer server.Close()
 
@@ -78,7 +78,7 @@ func TestExchangeToken_HTTPError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("StatusCode = %d, want %d", resp.StatusCode, http.StatusUnauthorized)

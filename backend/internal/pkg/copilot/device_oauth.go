@@ -32,7 +32,7 @@ func RequestDeviceCode(httpClient *http.Client) (*DeviceCodeResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("device code request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -76,7 +76,7 @@ func PollAccessToken(httpClient *http.Client, deviceCode string) (*AccessTokenRe
 	if err != nil {
 		return nil, fmt.Errorf("poll access token: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -108,7 +108,7 @@ func GetGitHubUser(httpClient *http.Client, accessToken string) (*GitHubUser, er
 	if err != nil {
 		return nil, fmt.Errorf("get github user: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

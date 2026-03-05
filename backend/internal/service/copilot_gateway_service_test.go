@@ -58,7 +58,9 @@ func TestCopilotGatewayService_ApplyModelMapping(t *testing.T) {
 			t.Fatalf("failed to unmarshal body: %v", err)
 		}
 		var m string
-		json.Unmarshal(req["model"], &m)
+		if err := json.Unmarshal(req["model"], &m); err != nil {
+			t.Fatalf("failed to unmarshal model: %v", err)
+		}
 		if m != "gpt-4o" {
 			t.Errorf("body model = %q, want %q", m, "gpt-4o")
 		}
@@ -85,7 +87,9 @@ func TestCopilotGatewayService_ApplyModelMapping(t *testing.T) {
 			t.Fatalf("failed to unmarshal body: %v", err)
 		}
 		var m string
-		json.Unmarshal(req["model"], &m)
+		if err := json.Unmarshal(req["model"], &m); err != nil {
+			t.Fatalf("failed to unmarshal model: %v", err)
+		}
 		if m != "gpt-4o" {
 			t.Errorf("body model = %q, want %q", m, "gpt-4o")
 		}

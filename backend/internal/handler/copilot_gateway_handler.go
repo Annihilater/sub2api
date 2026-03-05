@@ -148,7 +148,7 @@ func (h *CopilotGatewayHandler) ChatCompletions(c *gin.Context) {
 		account, err := h.gatewayService.SelectAccountForModelWithExclusions(
 			ctx,
 			apiKey.GroupID,
-			"",        // sessionHash — no sticky session for Copilot
+			"", // sessionHash — no sticky session for Copilot
 			reqModel,
 			failedAccountIDs,
 		)
@@ -597,7 +597,7 @@ func (h *CopilotGatewayHandler) Messages(c *gin.Context) {
 		account, err := h.gatewayService.SelectAccountForModelWithExclusions(
 			ctx,
 			apiKey.GroupID,
-			"",       // sessionHash
+			"", // sessionHash
 			reqModel,
 			failedAccountIDs,
 		)
