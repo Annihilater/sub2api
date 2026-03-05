@@ -1,0 +1,115 @@
+name: Build & Push Image
+
+on:
+  # 手动触发，可指定分支/tag
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag (e.g. latest, v1.0.0). Defaults to branch name.'
+        required: false
+        type: string
+  # push tag 自动触发（格式：v*）
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  packages: write   # 写入 GHCR
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # ------------------------------------------------------------------
+      # 计算镜像 tag
+      # ------------------------------------------------------------------
+      - name: Compute image tags
+        id: meta
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE="ghcr.io/${OWNER}/sub2api"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.tag }}" ]; then
+            # 手动指定 tag
+            VERSION="${{ github.event.inputs.tag }}"
+          elif [ "${{ github.event_name }}" = "push" ] && [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # tag push：提取 v1.2.3 → 同时打 v1.2.3 和 latest
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            # 其他：用分支名作 tag（把 / 替换为 -）
+            VERSION="${GITHUB_REF_NAME//\//-}"
+          fi
+
+          # 是否额外打 latest（tag push 或手动指定时不带 latest 前缀时）
+          TAGS="${IMAGE}:${VERSION}"
+          if [[ "${{ github.event_name }}" = "push" && "${{ github.ref }}" == refs/tags/* ]]; then
+            TAGS="${TAGS},${IMAGE}:latest"
+          fi
+
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "image=${IMAGE}" >> $GITHUB_OUTPUT
+          echo "📦 Image tags: ${TAGS}"
+
+      # ------------------------------------------------------------------
+      # Docker 多平台构建准备
+      # ------------------------------------------------------------------
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ------------------------------------------------------------------
+      # 构建并推送（linux/amd64 + linux/arm64）
+      # ------------------------------------------------------------------
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ github.event.head_commit.timestamp }}
+            GOPROXY=https://proxy.golang.org,direct
+            GOSUMDB=sum.golang.org
+          # 利用 GitHub Actions cache 加速层缓存
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+
+      # ------------------------------------------------------------------
+      # 输出摘要
+      # ------------------------------------------------------------------
+      - name: Summary
+        run: |
+          echo "## ✅ 镜像构建成功" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**镜像地址：**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**拉取命令：**" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
