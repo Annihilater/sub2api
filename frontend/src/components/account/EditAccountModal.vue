@@ -375,7 +375,72 @@
         </div>
       </div>
 
-      <!-- Upstream fields (only for upstream type) -->
+      <!-- Copilot model mapping (optional override of built-in dash→dot conversion) -->
+      <div v-if="account.platform === 'copilot'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <label class="input-label">{{ t('admin.accounts.copilot.modelMapping') }}</label>
+
+        <div class="mb-3 rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+          <p class="text-xs text-blue-700 dark:text-blue-400">
+            {{ t('admin.accounts.copilot.modelMappingHint') }}
+          </p>
+        </div>
+
+        <div v-if="copilotModelMappings.length > 0" class="mb-3 space-y-2">
+          <div
+            v-for="(mapping, index) in copilotModelMappings"
+            :key="getCopilotModelMappingKey(mapping)"
+            class="flex items-center gap-2"
+          >
+            <input
+              v-model="mapping.from"
+              type="text"
+              class="input flex-1"
+              :placeholder="t('admin.accounts.requestModel')"
+            />
+            <svg class="h-4 w-4 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+            </svg>
+            <input
+              v-model="mapping.to"
+              type="text"
+              class="input flex-1"
+              :placeholder="t('admin.accounts.actualModel')"
+            />
+            <button
+              type="button"
+              @click="removeCopilotModelMapping(index)"
+              class="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+            >
+              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          @click="addCopilotModelMapping"
+          class="mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+        >
+          <svg class="mr-1 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          {{ t('admin.accounts.addMapping') }}
+        </button>
+
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="preset in copilotPresetMappings"
+            :key="preset.label"
+            type="button"
+            @click="addCopilotPresetMapping(preset.from, preset.to)"
+            :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
+          >
+            + {{ preset.label }}
+          </button>
+        </div>
+      </div>
       <div v-if="account.type === 'upstream'" class="space-y-4">
         <div>
           <label class="input-label">{{ t('admin.accounts.upstream.baseUrl') }}</label>
@@ -1340,6 +1405,14 @@ const baseUrlHint = computed(() => {
 
 const antigravityPresetMappings = computed(() => getPresetMappingsByPlatform('antigravity'))
 
+const copilotPresetMappings = computed(() => [
+  { label: 'Sonnet 4.5', from: 'claude-sonnet-4-5', to: 'claude-sonnet-4.5', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:hover:bg-purple-800/40' },
+  { label: 'Sonnet 4.6', from: 'claude-sonnet-4-6', to: 'claude-sonnet-4.6', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:hover:bg-purple-800/40' },
+  { label: 'Opus 4.5', from: 'claude-opus-4-5', to: 'claude-opus-4.5', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-800/40' },
+  { label: 'Opus 4.6', from: 'claude-opus-4-6', to: 'claude-opus-4.6', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-800/40' },
+  { label: 'Haiku 4.5', from: 'claude-haiku-4-5', to: 'claude-haiku-4.5', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-800/40' },
+])
+
 // Model mapping type
 interface ModelMapping {
   from: string
@@ -1370,10 +1443,12 @@ const mixedScheduling = ref(false) // For antigravity accounts: enable mixed sch
 const antigravityModelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
 const antigravityWhitelistModels = ref<string[]>([])
 const antigravityModelMappings = ref<ModelMapping[]>([])
+const copilotModelMappings = ref<ModelMapping[]>([])
 const tempUnschedEnabled = ref(false)
 const tempUnschedRules = ref<TempUnschedRuleForm[]>([])
 const getModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-model-mapping')
 const getAntigravityModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-antigravity-model-mapping')
+const getCopilotModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-copilot-model-mapping')
 const getTempUnschedRuleKey = createStableObjectKeyResolver<TempUnschedRuleForm>('edit-temp-unsched-rule')
 
 const showMixedChannelWarning = ref(false)
@@ -1613,6 +1688,13 @@ watch(
         if (newAccount.platform === 'copilot') {
           editBaseUrl.value = (credentials.base_url as string) || 'https://api.individual.githubcopilot.com'
           editGithubToken.value = '' // never show existing token
+          // Load copilot model mapping
+          const rawCopilotMapping = credentials.model_mapping as Record<string, string> | undefined
+          if (rawCopilotMapping && typeof rawCopilotMapping === 'object') {
+            copilotModelMappings.value = Object.entries(rawCopilotMapping).map(([from, to]) => ({ from, to }))
+          } else {
+            copilotModelMappings.value = []
+          }
         } else {
           const platformDefaultUrl =
             newAccount.platform === 'openai' || newAccount.platform === 'sora'
@@ -1673,6 +1755,7 @@ watch(
         modelRestrictionMode.value = 'whitelist'
         modelMappings.value = []
         allowedModels.value = []
+        copilotModelMappings.value = []
         customErrorCodesEnabled.value = false
         selectedErrorCodes.value = []
       }
@@ -1716,6 +1799,23 @@ const addAntigravityPresetMapping = (from: string, to: string) => {
     return
   }
   antigravityModelMappings.value.push({ from, to })
+}
+
+const addCopilotModelMapping = () => {
+  copilotModelMappings.value.push({ from: '', to: '' })
+}
+
+const removeCopilotModelMapping = (index: number) => {
+  copilotModelMappings.value.splice(index, 1)
+}
+
+const addCopilotPresetMapping = (from: string, to: string) => {
+  const exists = copilotModelMappings.value.some((m) => m.from === from)
+  if (exists) {
+    appStore.showInfo(t('admin.accounts.mappingExists', { model: from }))
+    return
+  }
+  copilotModelMappings.value.push({ from, to })
 }
 
 // Error code toggle helper
@@ -2105,6 +2205,11 @@ const handleSubmit = async () => {
         } else {
           appStore.showError(t('admin.accounts.copilot.pleaseEnterToken'))
           return
+        }
+        // Save copilot model mapping if configured
+        const copilotMapping = buildModelMappingObject('mapping', [], copilotModelMappings.value)
+        if (copilotMapping) {
+          newCredentials.model_mapping = copilotMapping
         }
         applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
         if (!applyTempUnschedConfig(newCredentials)) {

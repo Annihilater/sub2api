@@ -517,6 +517,35 @@ export async function getAntigravityDefaultModelMapping(): Promise<Record<string
 }
 
 /**
+ * Copilot quota info returned by the backend
+ */
+export interface CopilotQuotaDetail {
+  entitlement?: number
+  overage_permitted?: boolean
+  used?: number
+}
+
+export interface CopilotQuotaInfo {
+  plan?: string
+  plan_type?: string
+  sku?: string
+  chat?: CopilotQuotaDetail
+  completions?: CopilotQuotaDetail
+  premium_interactions?: CopilotQuotaDetail
+  quota_reset_date?: string
+}
+
+/**
+ * Get Copilot quota information for an account
+ * @param id - Account ID
+ * @returns Copilot quota info
+ */
+export async function getCopilotQuota(id: number): Promise<CopilotQuotaInfo> {
+  const { data } = await apiClient.get<CopilotQuotaInfo>(`/admin/accounts/${id}/copilot-quota`)
+  return data
+}
+
+/**
  * Refresh OpenAI token using refresh token
  * @param refreshToken - The refresh token
  * @param proxyId - Optional proxy ID
@@ -591,7 +620,8 @@ export const accountsAPI = {
   syncFromCrs,
   exportData,
   importData,
-  getAntigravityDefaultModelMapping
+  getAntigravityDefaultModelMapping,
+  getCopilotQuota
 }
 
 export default accountsAPI

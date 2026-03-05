@@ -2516,7 +2516,18 @@ export default {
         loggedInAs: '已登录为 {login}',
         tryAgain: '重试',
         deviceFlowError: '设备认证流程启动失败',
-        pleaseCompleteAuth: '请先完成 GitHub 认证'
+        pleaseCompleteAuth: '请先完成 GitHub 认证',
+        modelMapping: 'Copilot 模型映射',
+        modelMappingHint: '将请求模型名映射到 Copilot 实际模型名（如将 claude-sonnet-4-5 映射到 claude-sonnet-4.5）。留空则使用内置默认映射（自动横杠↔点转换）。',
+        quota: {
+          title: 'Copilot 使用量',
+          plan: '套餐类型',
+          premiumInteractions: 'Premium 对话',
+          resetDate: '下次重置',
+          unlimited: '无限制',
+          remaining: '剩余 {n} 次',
+          used: '已用 {used}/{total}'
+        }
       },
       // Stats Modal
       viewStats: '查看统计',

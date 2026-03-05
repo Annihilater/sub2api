@@ -2387,7 +2387,18 @@ export default {
         loggedInAs: 'Logged in as {login}',
         tryAgain: 'Try again',
         deviceFlowError: 'Failed to start device authentication flow',
-        pleaseCompleteAuth: 'Please complete GitHub authentication first'
+        pleaseCompleteAuth: 'Please complete GitHub authentication first',
+        modelMapping: 'Copilot Model Mapping',
+        modelMappingHint: 'Map request model names to Copilot actual model names (e.g. claude-sonnet-4-5 → claude-sonnet-4.5). Leave empty to use built-in default mapping (automatic dash↔dot conversion).',
+        quota: {
+          title: 'Copilot Usage',
+          plan: 'Plan',
+          premiumInteractions: 'Premium Interactions',
+          resetDate: 'Resets On',
+          unlimited: 'Unlimited',
+          remaining: '{n} remaining',
+          used: '{used}/{total} used'
+        }
       },
       // Stats Modal
       viewStats: 'View Stats',
