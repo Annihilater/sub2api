@@ -1615,6 +1615,10 @@ const executeCcsImport = (row: ApiKey, clientType: 'claude' | 'gemini') => {
     // Antigravity always uses /antigravity suffix
     app = clientType === 'gemini' ? 'gemini' : 'claude'
     endpoint = `${baseUrl}/antigravity`
+  } else if (platform === 'copilot') {
+    // Copilot uses /copilot path with Anthropic-compatible endpoint for Claude Code
+    app = 'claude'
+    endpoint = `${baseUrl}/copilot`
   } else {
     switch (platform) {
       case 'openai':
