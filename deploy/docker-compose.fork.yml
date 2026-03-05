@@ -1,0 +1,15 @@
+# =============================================================================
+# Sub2API Docker Compose - Fork Build Override
+# =============================================================================
+# 使用 fork 仓库在 GHCR 构建的镜像（ghcr.io/annihilater/sub2api）
+#
+# 用法（与 docker-compose.yml 叠加使用）：
+#   docker compose -f docker-compose.yml -f docker-compose.fork.yml up -d
+#
+# 或直接用环境变量覆盖：
+#   IMAGE=ghcr.io/annihilater/sub2api:latest docker compose up -d
+# =============================================================================
+
+services:
+  sub2api:
+    image: ${IMAGE:-ghcr.io/annihilater/sub2api:latest}
