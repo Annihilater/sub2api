@@ -1578,33 +1578,39 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
-	// Handle Copilot accounts
+	// Handle Copilot accounts: fetch live model list from Copilot API so that
+	// the test modal always reflects the real available models, with dot→dash
+	// conversion and account-level mapping already applied by ListModels.
+	// All models are returned regardless of supported_endpoints — the test
+	// logic selects the appropriate endpoint per model.
 	if account.Platform == service.PlatformCopilot {
-		mapping := account.GetModelMapping()
-		if len(mapping) == 0 {
-			response.Success(c, copilot.DefaultModels)
-			return
-		}
-		var models []copilot.Model
-		for requestedModel := range mapping {
-			var found bool
-			for _, dm := range copilot.DefaultModels {
-				if dm.ID == requestedModel {
-					models = append(models, dm)
-					found = true
-					break
+		if h.copilotGatewayService != nil {
+			body, err := h.copilotGatewayService.ListModels(c.Request.Context(), account)
+			if err == nil {
+				// Parse the OpenAI-format models response and return the data array.
+				var modelsResp struct {
+					Data []copilot.Model `json:"data"`
+				}
+				if jsonErr := json.Unmarshal(body, &modelsResp); jsonErr == nil {
+					// The Copilot API returns the human-readable label in "name",
+					// not "display_name". Populate DisplayName from Name so the
+					// frontend label-key="display_name" always has a value to show.
+					for i := range modelsResp.Data {
+						if modelsResp.Data[i].DisplayName == "" {
+							if modelsResp.Data[i].Name != "" {
+								modelsResp.Data[i].DisplayName = modelsResp.Data[i].Name
+							} else {
+								modelsResp.Data[i].DisplayName = modelsResp.Data[i].ID
+							}
+						}
+					}
+					response.Success(c, modelsResp.Data)
+					return
 				}
 			}
-			if !found {
-				models = append(models, copilot.Model{
-					ID:          requestedModel,
-					Object:      "model",
-					Type:        "model",
-					DisplayName: requestedModel,
-				})
-			}
 		}
-		response.Success(c, models)
+		// Fallback to default models if live fetch fails.
+		response.Success(c, copilot.DefaultModels)
 		return
 	}
 

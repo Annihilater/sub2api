@@ -366,7 +366,117 @@ func (s *CopilotGatewayService) ListModels(
 	// The reverse mapping is applied in normalizeCopilotModel when forwarding requests.
 	body = rewriteModelIDsForClient(body)
 
+	// Apply account-level model mapping to the model list so that users always
+	// see the mapped (standardized) model IDs instead of the raw Copilot IDs.
+	// e.g. if the account maps "claude-sonnet-4-5" → "claude-sonnet-4-5-20250929",
+	// the returned model list will show the mapped ID.
+	modelMapping := account.GetModelMapping()
+	if len(modelMapping) > 0 {
+		body = applyMappingToModelsList(body, modelMapping)
+	}
+
+	// Deduplicate model IDs — the Copilot API may return the same model ID
+	// more than once (e.g. gpt-4o appears twice in some responses).
+	body = deduplicateModelsList(body)
+
 	return body, nil
+}
+
+// deduplicateModelsList removes duplicate model entries (by id) from an
+// OpenAI-format /models JSON response. The first occurrence of each ID is kept.
+func deduplicateModelsList(body []byte) []byte {
+	var resp struct {
+		Object string            `json:"object"`
+		Data   []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return body
+	}
+
+	seen := make(map[string]struct{}, len(resp.Data))
+	deduped := make([]json.RawMessage, 0, len(resp.Data))
+	for _, raw := range resp.Data {
+		var m struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(raw, &m); err != nil || m.ID == "" {
+			deduped = append(deduped, raw)
+			continue
+		}
+		if _, exists := seen[m.ID]; exists {
+			continue
+		}
+		seen[m.ID] = struct{}{}
+		deduped = append(deduped, raw)
+	}
+
+	resp.Data = deduped
+	out, err := json.Marshal(resp)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// applyMappingToModelsList rewrites model IDs in an OpenAI-format /models JSON
+// response according to the provided mapping table.
+//
+// Only the "id" field of each model object is rewritten; all other fields are
+// preserved as-is. Models whose IDs are not present in the mapping are returned
+// unchanged.
+func applyMappingToModelsList(body []byte, modelMapping map[string]string) []byte {
+	// Parse the OpenAI models response: {"object":"list","data":[{"id":"..."},...]}
+	var resp struct {
+		Object string            `json:"object"`
+		Data   []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		// Not parseable — return as-is rather than breaking the response.
+		return body
+	}
+
+	rewritten := make([]json.RawMessage, 0, len(resp.Data))
+	for _, raw := range resp.Data {
+		// Extract the model ID.
+		var m struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(raw, &m); err != nil || m.ID == "" {
+			rewritten = append(rewritten, raw)
+			continue
+		}
+
+		mapped, ok := modelMapping[m.ID]
+		if !ok || mapped == "" {
+			rewritten = append(rewritten, raw)
+			continue
+		}
+
+		// Replace the "id" (and "display_name" if present) in the raw JSON object.
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			rewritten = append(rewritten, raw)
+			continue
+		}
+		idBytes, _ := json.Marshal(mapped)
+		obj["id"] = idBytes
+		// Update display_name to match the mapped ID for clarity.
+		obj["display_name"] = idBytes
+
+		replaced, err := json.Marshal(obj)
+		if err != nil {
+			rewritten = append(rewritten, raw)
+			continue
+		}
+		rewritten = append(rewritten, replaced)
+	}
+
+	resp.Data = rewritten
+	out, err := json.Marshal(resp)
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 // rewriteModelIDsForClient rewrites Claude model IDs in a Copilot /models JSON

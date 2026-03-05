@@ -98,12 +98,23 @@ type GitHubUser struct {
 	Name      string `json:"name"`
 }
 
-// Model represents a Copilot model, using the same format as other platforms.
+// Model represents a Copilot model returned by the GitHub Copilot API.
+//
+// The Copilot API returns the human-readable label in the "name" field
+// (e.g. "Claude Sonnet 4.5"), not "display_name". The "display_name" field
+// is our internal alias kept for compatibility with other platforms.
 type Model struct {
 	ID          string `json:"id"`
 	Object      string `json:"object"`
 	Type        string `json:"type"`
+	// Name is the human-readable label returned by the Copilot API (e.g. "Claude Sonnet 4.5").
+	Name        string `json:"name,omitempty"`
+	// DisplayName is our internal alias; populated from Name when Name is present.
 	DisplayName string `json:"display_name"`
+	// SupportedEndpoints lists the API endpoints this model supports.
+	// When non-empty, only models that include "/chat/completions" are usable
+	// via the gateway. Models with an empty list are assumed to support all endpoints.
+	SupportedEndpoints []string `json:"supported_endpoints,omitempty"`
 }
 
 // DefaultModels is the list of models commonly available via Copilot.
