@@ -33,21 +33,21 @@ type AdminHandlers struct {
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
-	Auth          *AuthHandler
-	User          *UserHandler
-	APIKey        *APIKeyHandler
-	Usage         *UsageHandler
-	Redeem        *RedeemHandler
-	Subscription  *SubscriptionHandler
-	Announcement  *AnnouncementHandler
-	Admin         *AdminHandlers
-	Gateway       *GatewayHandler
-	OpenAIGateway *OpenAIGatewayHandler
-	SoraGateway   *SoraGatewayHandler
-	SoraClient      *SoraClientHandler
-	Setting         *SettingHandler
-	Totp            *TotpHandler
-	CopilotGateway  *CopilotGatewayHandler
+	Auth           *AuthHandler
+	User           *UserHandler
+	APIKey         *APIKeyHandler
+	Usage          *UsageHandler
+	Redeem         *RedeemHandler
+	Subscription   *SubscriptionHandler
+	Announcement   *AnnouncementHandler
+	Admin          *AdminHandlers
+	Gateway        *GatewayHandler
+	OpenAIGateway  *OpenAIGatewayHandler
+	SoraGateway    *SoraGatewayHandler
+	SoraClient     *SoraClientHandler
+	Setting        *SettingHandler
+	Totp           *TotpHandler
+	CopilotGateway *CopilotGatewayHandler
 }
 
 // BuildInfo contains build-time information

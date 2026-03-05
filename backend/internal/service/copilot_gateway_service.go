@@ -317,20 +317,15 @@ func (s *CopilotGatewayService) applyModelMapping(body []byte, account *Account)
 
 	if mappedModel != originalModel {
 		// Replace model in request body
-		newBody, err := json.Marshal(map[string]json.RawMessage{})
-		if err == nil {
-			// Simple approach: replace model field in the JSON
-			var raw map[string]json.RawMessage
-			if err := json.Unmarshal(body, &raw); err == nil {
-				modelBytes, _ := json.Marshal(mappedModel)
-				raw["model"] = modelBytes
-				if replaced, err := json.Marshal(raw); err == nil {
-					newBody = replaced
-					slog.Debug("copilot model mapping",
-						"original", originalModel,
-						"mapped", mappedModel)
-					return newBody, originalModel
-				}
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(body, &raw); err == nil {
+			modelBytes, _ := json.Marshal(mappedModel)
+			raw["model"] = modelBytes
+			if newBody, err := json.Marshal(raw); err == nil {
+				slog.Debug("copilot model mapping",
+					"original", originalModel,
+					"mapped", mappedModel)
+				return newBody, originalModel
 			}
 		}
 	}

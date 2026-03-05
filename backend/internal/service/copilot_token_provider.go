@@ -13,11 +13,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/copilot"
 )
 
-const (
-	// copilotTokenRefreshSkew is how early we refresh before the token's own refresh hint.
-	copilotTokenRefreshSkew = 60 * time.Second
-)
-
 // CopilotTokenProvider manages Copilot API tokens for GitHub Copilot accounts.
 //
 // GitHub Copilot uses a two-step token flow:

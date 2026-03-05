@@ -1256,7 +1256,7 @@ func (s *AccountTestService) selectCopilotTestEndpoint(ctx context.Context, copi
 	if err != nil {
 		return copilotEndpointChatCompletions
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return copilotEndpointChatCompletions
@@ -1416,7 +1416,7 @@ func (s *AccountTestService) testCopilotWithChatCompletions(c *gin.Context, ctx 
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Copilot API request failed: %s", err.Error()))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -1459,7 +1459,7 @@ func (s *AccountTestService) testCopilotWithResponsesEndpoint(c *gin.Context, ct
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Copilot API request failed: %s", err.Error()))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -1505,7 +1505,7 @@ func (s *AccountTestService) testCopilotWithMessagesEndpoint(c *gin.Context, ctx
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Copilot API request failed: %s", err.Error()))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

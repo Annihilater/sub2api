@@ -680,9 +680,7 @@ type copilotStreamState struct {
 }
 
 type copilotToolCallInfo struct {
-	id                 string
-	name               string
-	anthropicBlockIdx  int
+	anthropicBlockIdx int
 }
 
 // translateChunkToAnthropicEvents converts a single OpenAI SSE chunk to zero or
@@ -763,8 +761,6 @@ func translateChunkToAnthropicEvents(
 			}
 			anthropicIdx := state.blockIndex
 			state.toolCalls[tc.Index] = copilotToolCallInfo{
-				id:                tc.ID,
-				name:              tc.Function.Name,
 				anthropicBlockIdx: anthropicIdx,
 			}
 			events = append(events, toolUseBlockStart(anthropicIdx, tc.ID, tc.Function.Name))
