@@ -296,25 +296,77 @@ func detectStreamMode(body []byte) bool {
 }
 
 // parseStreamUsage extracts usage data from an SSE data line.
+// Handles two formats:
+//
+// Chat Completions format (most models):
+//
+//	{"usage": {"prompt_tokens": N, "completion_tokens": M}}
+//
+// Responses API format (Codex and similar):
+//
+//	{"type": "response.completed", "response": {"usage": {"input_tokens": N, "output_tokens": M}}}
 func (s *CopilotGatewayService) parseStreamUsage(data string, usage *CopilotUsage) {
-	var chunk struct {
+	b := []byte(data)
+
+	// Try Chat Completions format first.
+	var ccChunk struct {
 		Usage *CopilotUsage `json:"usage"`
 	}
-	if err := json.Unmarshal([]byte(data), &chunk); err == nil && chunk.Usage != nil {
-		usage.PromptTokens = chunk.Usage.PromptTokens
-		usage.CompletionTokens = chunk.Usage.CompletionTokens
-		usage.TotalTokens = chunk.Usage.TotalTokens
+	if err := json.Unmarshal(b, &ccChunk); err == nil && ccChunk.Usage != nil &&
+		(ccChunk.Usage.PromptTokens > 0 || ccChunk.Usage.CompletionTokens > 0) {
+		usage.PromptTokens = ccChunk.Usage.PromptTokens
+		usage.CompletionTokens = ccChunk.Usage.CompletionTokens
+		usage.TotalTokens = ccChunk.Usage.TotalTokens
+		return
+	}
+
+	// Try Responses API format: type = "response.completed".
+	var respChunk struct {
+		Type     string `json:"type"`
+		Response struct {
+			Usage struct {
+				InputTokens  int `json:"input_tokens"`
+				OutputTokens int `json:"output_tokens"`
+			} `json:"usage"`
+		} `json:"response"`
+	}
+	if err := json.Unmarshal(b, &respChunk); err == nil &&
+		respChunk.Type == "response.completed" {
+		usage.PromptTokens = respChunk.Response.Usage.InputTokens
+		usage.CompletionTokens = respChunk.Response.Usage.OutputTokens
+		usage.TotalTokens = respChunk.Response.Usage.InputTokens + respChunk.Response.Usage.OutputTokens
 	}
 }
 
 // parseNonStreamUsage extracts usage data from a non-streaming response body.
+// Handles both Chat Completions format (prompt_tokens/completion_tokens)
+// and Responses API format (input_tokens/output_tokens).
 func (s *CopilotGatewayService) parseNonStreamUsage(body []byte) *CopilotUsage {
-	var resp struct {
+	// Try Chat Completions format.
+	var ccResp struct {
 		Usage *CopilotUsage `json:"usage"`
 	}
-	if err := json.Unmarshal(body, &resp); err == nil && resp.Usage != nil {
-		return resp.Usage
+	if err := json.Unmarshal(body, &ccResp); err == nil && ccResp.Usage != nil &&
+		(ccResp.Usage.PromptTokens > 0 || ccResp.Usage.CompletionTokens > 0) {
+		return ccResp.Usage
 	}
+
+	// Try Responses API format.
+	var respResp struct {
+		Usage struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(body, &respResp); err == nil &&
+		(respResp.Usage.InputTokens > 0 || respResp.Usage.OutputTokens > 0) {
+		return &CopilotUsage{
+			PromptTokens:     respResp.Usage.InputTokens,
+			CompletionTokens: respResp.Usage.OutputTokens,
+			TotalTokens:      respResp.Usage.InputTokens + respResp.Usage.OutputTokens,
+		}
+	}
+
 	return &CopilotUsage{}
 }
 
@@ -495,6 +547,105 @@ func rewriteModelIDsForClient(body []byte) []byte {
 	return result
 }
 
+
+// OpenAI Responses API gateway (Codex CLI)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ForwardResponses forwards an OpenAI Responses API request to the Copilot API.
+//
+// Codex CLI uses wire_api = "responses" which sends requests to {base_url}/responses.
+// The request and response formats are passed through as-is — no translation needed
+// since both sides speak the same Responses API protocol.
+func (s *CopilotGatewayService) ForwardResponses(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	body []byte,
+) (*CopilotForwardResult, error) {
+	startTime := time.Now()
+
+	token, err := s.tokenProvider.GetAccessToken(ctx, account)
+	if err != nil {
+		return nil, fmt.Errorf("copilot auth: %w", err)
+	}
+
+	baseURL := copilot.CopilotAPIBase
+	if customURL := strings.TrimSpace(account.GetCredential("base_url")); customURL != "" {
+		baseURL = strings.TrimRight(customURL, "/")
+	}
+
+	// Apply model mapping and normalize model name (dash→dot for Claude models).
+	body, model := s.applyNormalizedModelMapping(body, account)
+
+	isStream := detectStreamMode(body)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/responses", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("copilot responses: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	for k, vals := range copilot.CopilotHeaders("user", false) {
+		for _, v := range vals {
+			req.Header.Set(k, v)
+		}
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("copilot responses: upstream request: %w", err)
+	}
+
+	slog.Debug("copilot responses upstream response",
+		"account_id", account.ID,
+		"model", model,
+		"status", resp.StatusCode,
+		"stream", isStream,
+		"latency_ms", time.Since(startTime).Milliseconds())
+
+	if resp.StatusCode != http.StatusOK {
+		return s.handleErrorResponse(c, resp, account)
+	}
+
+	if isStream {
+		return s.handleStreamingResponse(c, resp, model)
+	}
+	return s.handleNonStreamingResponse(c, resp, model)
+}
+
+// applyNormalizedModelMapping applies account model mapping AND normalizes the
+// model name for the Copilot API (dash→dot conversion for Claude models,
+// e.g. "claude-sonnet-4-5" → "claude-sonnet-4.5").
+func (s *CopilotGatewayService) applyNormalizedModelMapping(body []byte, account *Account) ([]byte, string) {
+	var req struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil || req.Model == "" {
+		return body, ""
+	}
+
+	originalModel := req.Model
+	normalized := normalizeCopilotModel(originalModel, account.GetModelMapping())
+
+	if normalized == originalModel {
+		return body, originalModel
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return body, originalModel
+	}
+	modelBytes, _ := json.Marshal(normalized)
+	raw["model"] = modelBytes
+	newBody, err := json.Marshal(raw)
+	if err != nil {
+		return body, originalModel
+	}
+	slog.Debug("copilot model normalize+mapping",
+		"original", originalModel,
+		"normalized", normalized)
+	return newBody, originalModel
+}
 
 // Anthropic /v1/messages gateway
 // ─────────────────────────────────────────────────────────────────────────────
