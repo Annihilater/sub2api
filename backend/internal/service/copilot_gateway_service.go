@@ -16,6 +16,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/copilot"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 // claudeModelDotPattern matches Claude model IDs with dot-separated versions,
@@ -40,12 +41,21 @@ type CopilotGatewayService struct {
 func NewCopilotGatewayService(
 	tokenProvider *CopilotTokenProvider,
 ) *CopilotGatewayService {
-	// Use a dedicated transport with HTTP/2 disabled.
-	// The Copilot API occasionally returns 421 Misdirected Request when an
-	// HTTP/2 connection is reused across different account tokens; disabling
-	// HTTP/2 forces a fresh TCP+TLS connection per request, which avoids this.
+	// Use HTTP/1.1 only to avoid 421 Misdirected Request errors.
+	//
+	// The Copilot API returns 421 when an HTTP/2 connection established for one
+	// account token is subsequently reused with a different Bearer token.
+	// Setting NextProtos to ["http/1.1"] prevents ALPN from negotiating HTTP/2
+	// during TLS handshake, so every connection is HTTP/1.1.  ForceAttemptHTTP2
+	// is also false to ensure the stdlib's http2 package never upgrades.
 	transport := &http.Transport{
-		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			// Explicitly advertise only HTTP/1.1 during TLS ALPN negotiation.
+			// Without this, Go's net/http will negotiate h2 even when
+			// ForceAttemptHTTP2 is false, because the server supports h2.
+			NextProtos: []string{"http/1.1"},
+		},
 		ForceAttemptHTTP2:   false,
 		DisableKeepAlives:   false,
 		MaxIdleConnsPerHost: 10,
@@ -62,9 +72,12 @@ func NewCopilotGatewayService(
 
 // CopilotForwardResult holds the result of a Copilot API request.
 type CopilotForwardResult struct {
-	StatusCode int
-	Model      string
-	Usage      *CopilotUsage
+	StatusCode      int
+	Model           string
+	Usage           *CopilotUsage
+	Duration        time.Duration // 请求总耗时
+	FirstTokenMs    *int          // 首token时间（流式请求，毫秒）
+	ReasoningEffort *string       // 推理强度（Responses API 请求，如 "low"/"medium"/"high"）
 }
 
 // CopilotUsage tracks token usage from a Copilot API response.
@@ -89,10 +102,15 @@ func (s *CopilotGatewayService) ForwardChatCompletions(
 		return nil, fmt.Errorf("copilot auth: %w", err)
 	}
 
-	// Determine base URL
+	// Determine base URL for /chat/completions.
+	// Priority: explicit base_url credential (legacy) → plan_type credential → default.
+	// The plan_type credential ("individual" / "business" / "enterprise") maps to the
+	// corresponding subdomain; unknown or empty values fall back to CopilotAPIBase.
 	baseURL := copilot.CopilotAPIBase
 	if customURL := strings.TrimSpace(account.GetCredential("base_url")); customURL != "" {
 		baseURL = strings.TrimRight(customURL, "/")
+	} else if planType := strings.TrimSpace(account.GetCredential("plan_type")); planType != "" {
+		baseURL = copilot.ChatBaseURLForPlan(planType)
 	}
 
 	// Apply model mapping if configured
@@ -137,11 +155,11 @@ func (s *CopilotGatewayService) ForwardChatCompletions(
 
 	// Handle streaming response
 	if isStream {
-		return s.handleStreamingResponse(c, resp, model)
+		return s.handleStreamingResponse(c, resp, model, startTime)
 	}
 
 	// Handle non-streaming response
-	return s.handleNonStreamingResponse(c, resp, model)
+	return s.handleNonStreamingResponse(c, resp, model, startTime)
 }
 
 // handleStreamingResponse proxies SSE streaming from Copilot API to the client.
@@ -149,6 +167,7 @@ func (s *CopilotGatewayService) handleStreamingResponse(
 	c *gin.Context,
 	resp *http.Response,
 	model string,
+	startTime time.Time,
 ) (*CopilotForwardResult, error) {
 	defer resp.Body.Close()
 
@@ -166,6 +185,8 @@ func (s *CopilotGatewayService) handleStreamingResponse(
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
 
+	var firstTokenMs *int
+
 	for scanner.Scan() {
 		line := scanner.Text()
 
@@ -173,6 +194,11 @@ func (s *CopilotGatewayService) handleStreamingResponse(
 		if strings.HasPrefix(line, "data: ") {
 			data := line[6:]
 			if data != "[DONE]" {
+				// Record first token time on first data chunk
+				if firstTokenMs == nil {
+					ms := int(time.Since(startTime).Milliseconds())
+					firstTokenMs = &ms
+				}
 				s.parseStreamUsage(data, usage)
 			}
 		}
@@ -187,9 +213,11 @@ func (s *CopilotGatewayService) handleStreamingResponse(
 	}
 
 	return &CopilotForwardResult{
-		StatusCode: http.StatusOK,
-		Model:      model,
-		Usage:      usage,
+		StatusCode:   http.StatusOK,
+		Model:        model,
+		Usage:        usage,
+		Duration:     time.Since(startTime),
+		FirstTokenMs: firstTokenMs,
 	}, nil
 }
 
@@ -198,6 +226,7 @@ func (s *CopilotGatewayService) handleNonStreamingResponse(
 	c *gin.Context,
 	resp *http.Response,
 	model string,
+	startTime time.Time,
 ) (*CopilotForwardResult, error) {
 	defer resp.Body.Close()
 
@@ -221,10 +250,17 @@ func (s *CopilotGatewayService) handleNonStreamingResponse(
 		StatusCode: http.StatusOK,
 		Model:      model,
 		Usage:      usage,
+		Duration:   time.Since(startTime),
 	}, nil
 }
 
 // handleErrorResponse handles non-200 responses from the Copilot API.
+//
+// For most error codes the response body is forwarded to the client immediately.
+// 421 Misdirected Request is a connection-level error (HTTP/2 connection reused
+// for a different virtual host) — we must NOT write the 421 to the client yet,
+// because the handler loop needs to failover to another account first.  After
+// calling CloseIdleConnections the next request will use a fresh connection.
 func (s *CopilotGatewayService) handleErrorResponse(
 	c *gin.Context,
 	resp *http.Response,
@@ -246,6 +282,15 @@ func (s *CopilotGatewayService) handleErrorResponse(
 		s.tokenProvider.InvalidateToken(account.ID)
 	case http.StatusTooManyRequests:
 		// Rate limited — caller should handle retry/failover
+	case http.StatusMisdirectedRequest:
+		// 421 is a connection-level error (HTTP/2 connection reused across
+		// different Bearer tokens / virtual hosts).  Flush idle connections so
+		// the next attempt gets a fresh TCP+TLS connection, then return without
+		// writing anything to the client — the handler loop will failover.
+		if t, ok := s.httpClient.Transport.(*http.Transport); ok {
+			t.CloseIdleConnections()
+		}
+		return &CopilotForwardResult{StatusCode: resp.StatusCode}, nil
 	}
 
 	// Forward error to client
@@ -306,6 +351,24 @@ func detectStreamMode(body []byte) bool {
 	default:
 		return false
 	}
+}
+
+// extractCopilotReasoningEffort extracts the reasoning_effort from a Responses API
+// request body. Checks both "reasoning.effort" (nested) and flat "reasoning_effort".
+// Returns nil if not present or not a recognized value.
+func extractCopilotReasoningEffort(body []byte) *string {
+	// Try nested: {"reasoning": {"effort": "high"}}
+	effort := strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String())
+	if effort == "" {
+		// Fallback: flat field {"reasoning_effort": "high"}
+		effort = strings.TrimSpace(gjson.GetBytes(body, "reasoning_effort").String())
+	}
+	if effort == "" {
+		return nil
+	}
+	// Normalize to lowercase.
+	normalized := strings.ToLower(effort)
+	return &normalized
 }
 
 // parseStreamUsage extracts usage data from an SSE data line.
@@ -396,6 +459,8 @@ func (s *CopilotGatewayService) ListModels(
 	baseURL := copilot.CopilotAPIBase
 	if customURL := strings.TrimSpace(account.GetCredential("base_url")); customURL != "" {
 		baseURL = strings.TrimRight(customURL, "/")
+	} else if planType := strings.TrimSpace(account.GetCredential("plan_type")); planType != "" {
+		baseURL = copilot.ChatBaseURLForPlan(planType)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/models", nil)
@@ -582,10 +647,16 @@ func (s *CopilotGatewayService) ForwardResponses(
 		return nil, fmt.Errorf("copilot auth: %w", err)
 	}
 
+	// The /responses endpoint is only available on the canonical api.githubcopilot.com.
+	// Plan-specific subdomains (individual, business, enterprise) and any legacy
+	// custom base_url that points to a subdomain do NOT expose /responses — they
+	// return 421 Misdirected Request.  Always use CopilotAPIBase here regardless of
+	// the account's plan_type or base_url setting.
 	baseURL := copilot.CopilotAPIBase
-	if customURL := strings.TrimSpace(account.GetCredential("base_url")); customURL != "" {
-		baseURL = strings.TrimRight(customURL, "/")
-	}
+
+	// Extract reasoning_effort before model rewrite (body still has original model).
+	// Uses the same gjson-based approach as extractOpenAIReasoningEffortFromBody.
+	reasoningEffort := extractCopilotReasoningEffort(body)
 
 	// Apply model mapping and normalize model name (dash→dot for Claude models).
 	body, model := s.applyNormalizedModelMapping(body, account)
@@ -620,10 +691,19 @@ func (s *CopilotGatewayService) ForwardResponses(
 		return s.handleErrorResponse(c, resp, account)
 	}
 
+	var result *CopilotForwardResult
+	var fwdErr error
 	if isStream {
-		return s.handleStreamingResponse(c, resp, model)
+		result, fwdErr = s.handleStreamingResponse(c, resp, model, startTime)
+	} else {
+		result, fwdErr = s.handleNonStreamingResponse(c, resp, model, startTime)
 	}
-	return s.handleNonStreamingResponse(c, resp, model)
+	if fwdErr != nil || result == nil {
+		return result, fwdErr
+	}
+	// Attach reasoning_effort extracted from request body.
+	result.ReasoningEffort = reasoningEffort
+	return result, nil
 }
 
 // applyNormalizedModelMapping applies account model mapping AND normalizes the
@@ -699,6 +779,8 @@ func (s *CopilotGatewayService) ForwardMessages(
 	baseURL := copilot.CopilotAPIBase
 	if customURL := strings.TrimSpace(account.GetCredential("base_url")); customURL != "" {
 		baseURL = strings.TrimRight(customURL, "/")
+	} else if planType := strings.TrimSpace(account.GetCredential("plan_type")); planType != "" {
+		baseURL = copilot.ChatBaseURLForPlan(planType)
 	}
 
 	// Build upstream request to Copilot /chat/completions.
@@ -731,9 +813,9 @@ func (s *CopilotGatewayService) ForwardMessages(
 	}
 
 	if isStream {
-		return s.handleMessagesStreamingResponse(c, resp, model)
+		return s.handleMessagesStreamingResponse(c, resp, model, startTime)
 	}
-	return s.handleMessagesNonStreamingResponse(c, resp, model)
+	return s.handleMessagesNonStreamingResponse(c, resp, model, startTime)
 }
 
 // handleMessagesNonStreamingResponse reads the OpenAI response and writes back
@@ -742,6 +824,7 @@ func (s *CopilotGatewayService) handleMessagesNonStreamingResponse(
 	c *gin.Context,
 	resp *http.Response,
 	model string,
+	startTime time.Time,
 ) (*CopilotForwardResult, error) {
 	defer resp.Body.Close()
 
@@ -759,7 +842,7 @@ func (s *CopilotGatewayService) handleMessagesNonStreamingResponse(
 			"error", err, "model", model)
 		// Fall back to raw body so the client gets something.
 		c.Data(http.StatusOK, "application/json", body)
-		return &CopilotForwardResult{StatusCode: http.StatusOK, Model: model, Usage: usage}, nil
+		return &CopilotForwardResult{StatusCode: http.StatusOK, Model: model, Usage: usage, Duration: time.Since(startTime)}, nil
 	}
 
 	c.Data(http.StatusOK, "application/json", anthropicBody)
@@ -767,6 +850,7 @@ func (s *CopilotGatewayService) handleMessagesNonStreamingResponse(
 		StatusCode: http.StatusOK,
 		Model:      model,
 		Usage:      usage,
+		Duration:   time.Since(startTime),
 	}, nil
 }
 
@@ -776,6 +860,7 @@ func (s *CopilotGatewayService) handleMessagesStreamingResponse(
 	c *gin.Context,
 	resp *http.Response,
 	model string,
+	startTime time.Time,
 ) (*CopilotForwardResult, error) {
 	defer resp.Body.Close()
 
@@ -796,6 +881,8 @@ func (s *CopilotGatewayService) handleMessagesStreamingResponse(
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
+
+	var firstTokenMs *int
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -819,6 +906,12 @@ func (s *CopilotGatewayService) handleMessagesStreamingResponse(
 			continue
 		}
 
+		// Record first token time on first parseable chunk.
+		if firstTokenMs == nil {
+			ms := int(time.Since(startTime).Milliseconds())
+			firstTokenMs = &ms
+		}
+
 		// Accumulate usage.
 		if chunk.Usage != nil {
 			usage.PromptTokens = chunk.Usage.PromptTokens
@@ -839,9 +932,11 @@ func (s *CopilotGatewayService) handleMessagesStreamingResponse(
 	}
 
 	return &CopilotForwardResult{
-		StatusCode: http.StatusOK,
-		Model:      model,
-		Usage:      usage,
+		StatusCode:   http.StatusOK,
+		Model:        model,
+		Usage:        usage,
+		Duration:     time.Since(startTime),
+		FirstTokenMs: firstTokenMs,
 	}, nil
 }
 

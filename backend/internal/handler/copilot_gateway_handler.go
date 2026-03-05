@@ -227,6 +227,8 @@ func (h *CopilotGatewayHandler) ChatCompletions(c *gin.Context) {
 						InputTokens:  capturedResult.Usage.PromptTokens,
 						OutputTokens: capturedResult.Usage.CompletionTokens,
 					},
+					Duration:     capturedResult.Duration,
+					FirstTokenMs: capturedResult.FirstTokenMs,
 				}
 				if err := h.gatewayService.RecordUsage(recordCtx, &service.RecordUsageInput{
 					Result:        fwdResult,
@@ -448,6 +450,9 @@ func (h *CopilotGatewayHandler) Responses(c *gin.Context) {
 						InputTokens:  capturedResult.Usage.PromptTokens,
 						OutputTokens: capturedResult.Usage.CompletionTokens,
 					},
+					Duration:        capturedResult.Duration,
+					FirstTokenMs:    capturedResult.FirstTokenMs,
+					ReasoningEffort: capturedResult.ReasoningEffort,
 				}
 				if err := h.gatewayService.RecordUsage(recordCtx, &service.RecordUsageInput{
 					Result:        fwdResult,
@@ -670,6 +675,8 @@ func (h *CopilotGatewayHandler) Messages(c *gin.Context) {
 						InputTokens:  capturedResult.Usage.PromptTokens,
 						OutputTokens: capturedResult.Usage.CompletionTokens,
 					},
+					Duration:     capturedResult.Duration,
+					FirstTokenMs: capturedResult.FirstTokenMs,
 				}
 				if err := h.gatewayService.RecordUsage(recordCtx, &service.RecordUsageInput{
 					Result:        fwdResult,

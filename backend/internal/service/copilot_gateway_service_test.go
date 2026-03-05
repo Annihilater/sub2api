@@ -222,7 +222,7 @@ func TestCopilotGatewayService_HandleNonStreamingResponse(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 
-		result, err := svc.handleNonStreamingResponse(c, resp, "gpt-4o")
+		result, err := svc.handleNonStreamingResponse(c, resp, "gpt-4o", time.Now())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -339,7 +339,7 @@ func TestCopilotGatewayService_HandleStreamingResponse(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 
-		result, err := svc.handleStreamingResponse(c, resp, "gpt-4o")
+		result, err := svc.handleStreamingResponse(c, resp, "gpt-4o", time.Now())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

@@ -459,8 +459,9 @@ type ForwardResult struct {
 	Model            string
 	Stream           bool
 	Duration         time.Duration
-	FirstTokenMs     *int // 首字时间（流式请求）
-	ClientDisconnect bool // 客户端是否在流式传输过程中断开
+	FirstTokenMs     *int    // 首字时间（流式请求）
+	ReasoningEffort  *string // 推理强度（Responses API 请求，如 "low"/"medium"/"high"）
+	ClientDisconnect bool    // 客户端是否在流式传输过程中断开
 
 	// 图片生成计费字段（图片生成模型使用）
 	ImageCount int    // 生成的图片数量
@@ -6486,6 +6487,7 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		AccountID:             account.ID,
 		RequestID:             result.RequestID,
 		Model:                 result.Model,
+		ReasoningEffort:       result.ReasoningEffort,
 		InputTokens:           result.Usage.InputTokens,
 		OutputTokens:          result.Usage.OutputTokens,
 		CacheCreationTokens:   result.Usage.CacheCreationInputTokens,
