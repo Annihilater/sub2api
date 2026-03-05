@@ -173,12 +173,20 @@ var DefaultModels = []Model{
 
 // QuotaDetail holds usage information for a single Copilot feature.
 type QuotaDetail struct {
-	// Entitlement is the total allowed quota (-1 or absent means unlimited).
+	// Entitlement is the total allowed quota (0 with Unlimited=true means unlimited).
 	Entitlement int `json:"entitlement,omitempty"`
 	// OveragePermitted indicates whether overage beyond the entitlement is allowed.
 	OveragePermitted bool `json:"overage_permitted,omitempty"`
 	// Used is the number of quota units consumed so far.
 	Used int `json:"used,omitempty"`
+	// Unlimited indicates this quota has no cap.
+	Unlimited bool `json:"unlimited,omitempty"`
+	// Remaining is the number of quota units left (may be negative if overage).
+	Remaining int `json:"remaining,omitempty"`
+	// OverageCount is the number of overage units consumed beyond entitlement.
+	OverageCount int `json:"overage_count,omitempty"`
+	// PercentRemaining is the percentage of quota remaining (0–100, may be negative).
+	PercentRemaining float64 `json:"percent_remaining,omitempty"`
 }
 
 // CopilotQuotaInfo holds the quota and plan information for a Copilot account.
@@ -199,4 +207,21 @@ type CopilotQuotaInfo struct {
 	PremiumInteractions *QuotaDetail `json:"premium_interactions,omitempty"`
 	// QuotaResetDate is the ISO-8601 date when the quota resets (e.g. "2026-04-01").
 	QuotaResetDate string `json:"quota_reset_date,omitempty"`
+}
+
+// CopilotAccountQuotaSummary bundles an account's basic info with its quota data.
+// Used by the batch quota summary endpoint.
+type CopilotAccountQuotaSummary struct {
+	// AccountID is the internal account ID.
+	AccountID int64 `json:"account_id"`
+	// AccountName is the display name of the account.
+	AccountName string `json:"account_name"`
+	// GitHubLogin is the GitHub username associated with this account.
+	GitHubLogin string `json:"github_login,omitempty"`
+	// Status is the account status (active/inactive/etc.).
+	Status string `json:"status"`
+	// QuotaInfo holds the quota details; nil if fetch failed.
+	QuotaInfo *CopilotQuotaInfo `json:"quota_info,omitempty"`
+	// Error holds an error message if the quota fetch failed.
+	Error string `json:"error,omitempty"`
 }

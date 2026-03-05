@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/copilot"
@@ -972,19 +973,44 @@ type copilotInternalUserResponse struct {
 	// ChatEnabled indicates whether chat is available.
 	ChatEnabled bool `json:"chat_enabled"`
 
-	// CopilotQuotaDetails contains fine-grained quota information when available.
-	CopilotQuotaDetails *struct {
-		Completions         *copilotQuotaDetailRaw `json:"completions"`
-		Chat                *copilotQuotaDetailRaw `json:"chat"`
-		PremiumInteractions *copilotQuotaDetailRaw `json:"premium_interactions"`
-		QuotaResetDate      string                 `json:"quota_reset_date,omitempty"`
-	} `json:"copilot_quota_details"`
+	// Login is the GitHub username.
+	Login string `json:"login"`
+
+	// QuotaResetDate is the date the quota resets (top-level field).
+	QuotaResetDate string `json:"quota_reset_date,omitempty"`
+
+	// QuotaSnapshots is the rich quota data returned by GitHub (newer format).
+	QuotaSnapshots *struct {
+		Completions         *copilotQuotaSnapshotRaw `json:"completions"`
+		Chat                *copilotQuotaSnapshotRaw `json:"chat"`
+		PremiumInteractions *copilotQuotaSnapshotRaw `json:"premium_interactions"`
+	} `json:"quota_snapshots"`
 }
 
-type copilotQuotaDetailRaw struct {
-	Entitlement      int  `json:"entitlement,omitempty"`
-	OveragePermitted bool `json:"overage_permitted,omitempty"`
-	Used             int  `json:"used,omitempty"`
+// copilotQuotaSnapshotRaw mirrors the quota_snapshots entries from GitHub API.
+type copilotQuotaSnapshotRaw struct {
+	Entitlement      int     `json:"entitlement"`
+	OverageCount     int     `json:"overage_count"`
+	OveragePermitted bool    `json:"overage_permitted"`
+	PercentRemaining float64 `json:"percent_remaining"`
+	Remaining        int     `json:"remaining"`
+	Unlimited        bool    `json:"unlimited"`
+}
+
+// toQuotaDetail converts a raw snapshot into the canonical QuotaDetail.
+func (r *copilotQuotaSnapshotRaw) toQuotaDetail() *copilot.QuotaDetail {
+	if r == nil {
+		return nil
+	}
+	return &copilot.QuotaDetail{
+		Entitlement:      r.Entitlement,
+		OveragePermitted: r.OveragePermitted,
+		Used:             r.Entitlement - r.Remaining + r.OverageCount,
+		Unlimited:        r.Unlimited,
+		Remaining:        r.Remaining,
+		OverageCount:     r.OverageCount,
+		PercentRemaining: r.PercentRemaining,
+	}
 }
 
 // FetchQuota fetches the Copilot quota and plan information for an account from
@@ -1031,36 +1057,64 @@ func (s *CopilotGatewayService) FetchQuota(
 	planType := planTypeFromString(raw.CopilotPlan)
 
 	info := &copilot.CopilotQuotaInfo{
-		Plan:     raw.CopilotPlan,
-		PlanType: planType,
+		Plan:           raw.CopilotPlan,
+		PlanType:       planType,
+		QuotaResetDate: raw.QuotaResetDate,
 	}
 
-	if d := raw.CopilotQuotaDetails; d != nil {
-		info.QuotaResetDate = d.QuotaResetDate
-		if d.Completions != nil {
-			info.Completions = &copilot.QuotaDetail{
-				Entitlement:      d.Completions.Entitlement,
-				OveragePermitted: d.Completions.OveragePermitted,
-				Used:             d.Completions.Used,
-			}
-		}
-		if d.Chat != nil {
-			info.Chat = &copilot.QuotaDetail{
-				Entitlement:      d.Chat.Entitlement,
-				OveragePermitted: d.Chat.OveragePermitted,
-				Used:             d.Chat.Used,
-			}
-		}
-		if d.PremiumInteractions != nil {
-			info.PremiumInteractions = &copilot.QuotaDetail{
-				Entitlement:      d.PremiumInteractions.Entitlement,
-				OveragePermitted: d.PremiumInteractions.OveragePermitted,
-				Used:             d.PremiumInteractions.Used,
-			}
-		}
+	if s := raw.QuotaSnapshots; s != nil {
+		info.Completions = s.Completions.toQuotaDetail()
+		info.Chat = s.Chat.toQuotaDetail()
+		info.PremiumInteractions = s.PremiumInteractions.toQuotaDetail()
 	}
 
 	return info, nil
+}
+
+// FetchAllCopilotQuotas fetches quota info for all active Copilot accounts
+// concurrently. Results are returned in arbitrary order. Failures are
+// recorded in the Error field of the corresponding summary entry.
+func (s *CopilotGatewayService) FetchAllCopilotQuotas(
+	ctx context.Context,
+	adminSvc AdminService,
+) ([]copilot.CopilotAccountQuotaSummary, error) {
+	// Page through all Copilot accounts (large page size to minimise round-trips).
+	const pageSize = 200
+	var allAccounts []Account
+	for page := 1; ; page++ {
+		accounts, _, err := adminSvc.ListAccounts(ctx, page, pageSize, PlatformCopilot, "", StatusActive, "", 0)
+		if err != nil {
+			return nil, fmt.Errorf("copilot: list accounts: %w", err)
+		}
+		allAccounts = append(allAccounts, accounts...)
+		if len(accounts) < pageSize {
+			break
+		}
+	}
+
+	results := make([]copilot.CopilotAccountQuotaSummary, len(allAccounts))
+	var wg sync.WaitGroup
+	for i, acc := range allAccounts {
+		wg.Add(1)
+		go func(idx int, a Account) {
+			defer wg.Done()
+			summary := copilot.CopilotAccountQuotaSummary{
+				AccountID:   a.ID,
+				AccountName: a.Name,
+				Status:      string(a.Status),
+				GitHubLogin: a.GetCredential("github_login"),
+			}
+			qi, err := s.FetchQuota(ctx, &a)
+			if err != nil {
+				summary.Error = err.Error()
+			} else {
+				summary.QuotaInfo = qi
+			}
+			results[idx] = summary
+		}(i, acc)
+	}
+	wg.Wait()
+	return results, nil
 }
 
 // planTypeFromString returns a human-readable plan type label.
