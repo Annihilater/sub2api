@@ -108,6 +108,10 @@ type Model struct {
 
 // DefaultModels is the list of models commonly available via Copilot.
 // These are the well-known models from the GitHub Copilot API.
+// Claude model IDs use dash-separated format (e.g. "claude-sonnet-4-5") so that
+// Claude Code's built-in model whitelist accepts them. The Copilot API itself uses
+// dot-separated format (e.g. "claude-sonnet-4.5") which is applied automatically
+// by normalizeCopilotModel when forwarding requests.
 var DefaultModels = []Model{
 	{ID: "gpt-4o", Object: "model", Type: "model", DisplayName: "GPT-4o"},
 	{ID: "gpt-4o-mini", Object: "model", Type: "model", DisplayName: "GPT-4o Mini"},
@@ -117,6 +121,41 @@ var DefaultModels = []Model{
 	{ID: "o4-mini", Object: "model", Type: "model", DisplayName: "o4 Mini"},
 	{ID: "o3-mini", Object: "model", Type: "model", DisplayName: "o3 Mini"},
 	{ID: "claude-sonnet-4", Object: "model", Type: "model", DisplayName: "Claude Sonnet 4"},
+	{ID: "claude-sonnet-4-5", Object: "model", Type: "model", DisplayName: "Claude Sonnet 4.5"},
+	{ID: "claude-sonnet-4-6", Object: "model", Type: "model", DisplayName: "Claude Sonnet 4.6"},
+	{ID: "claude-opus-4-5", Object: "model", Type: "model", DisplayName: "Claude Opus 4.5"},
+	{ID: "claude-opus-4-6", Object: "model", Type: "model", DisplayName: "Claude Opus 4.6"},
+	{ID: "claude-haiku-4-5", Object: "model", Type: "model", DisplayName: "Claude Haiku 4.5"},
 	{ID: "claude-3.5-sonnet", Object: "model", Type: "model", DisplayName: "Claude 3.5 Sonnet"},
 	{ID: "gemini-2.0-flash-001", Object: "model", Type: "model", DisplayName: "Gemini 2.0 Flash"},
+}
+
+// QuotaDetail holds usage information for a single Copilot feature.
+type QuotaDetail struct {
+	// Entitlement is the total allowed quota (-1 or absent means unlimited).
+	Entitlement int `json:"entitlement,omitempty"`
+	// OveragePermitted indicates whether overage beyond the entitlement is allowed.
+	OveragePermitted bool `json:"overage_permitted,omitempty"`
+	// Used is the number of quota units consumed so far.
+	Used int `json:"used,omitempty"`
+}
+
+// CopilotQuotaInfo holds the quota and plan information for a Copilot account.
+// This is derived from the GitHub API endpoint:
+// GET https://api.github.com/copilot_internal/user
+type CopilotQuotaInfo struct {
+	// Plan is the Copilot plan type, e.g. "copilot_enterprise", "copilot_business", "copilot_for_individuals".
+	Plan string `json:"plan,omitempty"`
+	// PlanType is a human-readable plan label, e.g. "Individual", "Business".
+	PlanType string `json:"plan_type,omitempty"`
+	// SKU is the subscription SKU string.
+	SKU string `json:"sku,omitempty"`
+	// Chat holds chat quota details.
+	Chat *QuotaDetail `json:"chat,omitempty"`
+	// Completions holds code completion quota details.
+	Completions *QuotaDetail `json:"completions,omitempty"`
+	// PremiumInteractions holds premium interaction quota details.
+	PremiumInteractions *QuotaDetail `json:"premium_interactions,omitempty"`
+	// QuotaResetDate is the ISO-8601 date when the quota resets (e.g. "2026-04-01").
+	QuotaResetDate string `json:"quota_reset_date,omitempty"`
 }

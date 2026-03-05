@@ -260,14 +260,17 @@ type openAIDelta struct {
 
 // translateAnthropicToOpenAI converts an Anthropic /v1/messages request body to
 // an OpenAI /chat/completions request body suitable for the Copilot API.
-func translateAnthropicToOpenAI(body []byte) ([]byte, error) {
+// modelMapping is an optional account-level model mapping (may be nil); when
+// a mapping entry is found for the requested model it takes priority over the
+// generic dash-to-dot conversion.
+func translateAnthropicToOpenAI(body []byte, modelMapping map[string]string) ([]byte, error) {
 	var req AnthropicMessagesRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, fmt.Errorf("parse anthropic request: %w", err)
 	}
 
 	openAIReq := openAIChatRequest{
-		Model:       normalizeCopilotModel(req.Model),
+		Model:       normalizeCopilotModel(req.Model, modelMapping),
 		Messages:    buildOpenAIMessages(req),
 		MaxTokens:   req.MaxTokens,
 		Stop:        req.StopSequences,
@@ -290,14 +293,26 @@ func translateAnthropicToOpenAI(body []byte) ([]byte, error) {
 // Claude Code sends model names like "claude-sonnet-4-5" (dashes, as exposed
 // by our /v1/models endpoint). Copilot API expects "claude-sonnet-4.5" (dots).
 //
-// Examples:
+// The optional modelMapping parameter provides account-level overrides. When a
+// mapping entry is found for the requested model, it takes priority over the
+// generic conversion.
+//
+// Examples (no mapping):
 //
 //	"claude-sonnet-4-5"          → "claude-sonnet-4.5"
 //	"claude-sonnet-4-5-20250929" → "claude-sonnet-4.5"
 //	"claude-opus-4-6"            → "claude-opus-4.6"
 //	"claude-haiku-4-5"           → "claude-haiku-4.5"
 //	"gpt-4o"                     → "gpt-4o"  (unchanged)
-func normalizeCopilotModel(model string) string {
+func normalizeCopilotModel(model string, modelMapping map[string]string) string {
+	// Check account-level mapping first.
+	if len(modelMapping) > 0 {
+		if target, ok := modelMapping[model]; ok {
+			return target
+		}
+	}
+
+	// Fallback: generic dash-to-dot conversion for known Claude model prefixes.
 	prefixes := []string{
 		"claude-sonnet-4-",
 		"claude-opus-4-",

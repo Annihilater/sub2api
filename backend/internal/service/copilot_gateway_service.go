@@ -407,7 +407,7 @@ func (s *CopilotGatewayService) ForwardMessages(
 	isStream := detectAnthropicStream(anthropicBody)
 
 	// Translate Anthropic request → OpenAI format.
-	openAIBody, err := translateAnthropicToOpenAI(anthropicBody)
+	openAIBody, err := translateAnthropicToOpenAI(anthropicBody, account.GetModelMapping())
 	if err != nil {
 		return nil, fmt.Errorf("copilot messages: translate request: %w", err)
 	}
@@ -592,4 +592,121 @@ func extractEventType(jsonStr string) string {
 		return e.Type
 	}
 	return "message"
+}
+
+// copilotInternalUserResponse is the raw response from the GitHub
+// copilot_internal/user endpoint. Only the fields we need are decoded.
+type copilotInternalUserResponse struct {
+	// CopilotPlan is the plan type string returned by GitHub.
+	CopilotPlan string `json:"copilot_plan"`
+
+	// ChatEnabled indicates whether chat is available.
+	ChatEnabled bool `json:"chat_enabled"`
+
+	// CopilotQuotaDetails contains fine-grained quota information when available.
+	CopilotQuotaDetails *struct {
+		Completions         *copilotQuotaDetailRaw `json:"completions"`
+		Chat                *copilotQuotaDetailRaw `json:"chat"`
+		PremiumInteractions *copilotQuotaDetailRaw `json:"premium_interactions"`
+		QuotaResetDate      string                 `json:"quota_reset_date,omitempty"`
+	} `json:"copilot_quota_details"`
+}
+
+type copilotQuotaDetailRaw struct {
+	Entitlement      int  `json:"entitlement,omitempty"`
+	OveragePermitted bool `json:"overage_permitted,omitempty"`
+	Used             int  `json:"used,omitempty"`
+}
+
+// FetchQuota fetches the Copilot quota and plan information for an account from
+// the GitHub copilot_internal/user API endpoint.
+func (s *CopilotGatewayService) FetchQuota(
+	ctx context.Context,
+	account *Account,
+) (*copilot.CopilotQuotaInfo, error) {
+	githubToken := account.GetCredential("github_token")
+	if githubToken == "" {
+		return nil, fmt.Errorf("copilot: no github_token configured for account %d", account.ID)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		"https://api.github.com/copilot_internal/user", nil)
+	if err != nil {
+		return nil, fmt.Errorf("copilot: build quota request: %w", err)
+	}
+	req.Header.Set("Authorization", "token "+githubToken)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-GitHub-Api-Version", copilot.DefaultGitHubAPIVersion)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("copilot: quota request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("copilot: read quota response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("copilot: quota HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var raw copilotInternalUserResponse
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("copilot: parse quota response: %w", err)
+	}
+
+	// Map plan string to human-readable plan type.
+	planType := planTypeFromString(raw.CopilotPlan)
+
+	info := &copilot.CopilotQuotaInfo{
+		Plan:     raw.CopilotPlan,
+		PlanType: planType,
+	}
+
+	if d := raw.CopilotQuotaDetails; d != nil {
+		info.QuotaResetDate = d.QuotaResetDate
+		if d.Completions != nil {
+			info.Completions = &copilot.QuotaDetail{
+				Entitlement:      d.Completions.Entitlement,
+				OveragePermitted: d.Completions.OveragePermitted,
+				Used:             d.Completions.Used,
+			}
+		}
+		if d.Chat != nil {
+			info.Chat = &copilot.QuotaDetail{
+				Entitlement:      d.Chat.Entitlement,
+				OveragePermitted: d.Chat.OveragePermitted,
+				Used:             d.Chat.Used,
+			}
+		}
+		if d.PremiumInteractions != nil {
+			info.PremiumInteractions = &copilot.QuotaDetail{
+				Entitlement:      d.PremiumInteractions.Entitlement,
+				OveragePermitted: d.PremiumInteractions.OveragePermitted,
+				Used:             d.PremiumInteractions.Used,
+			}
+		}
+	}
+
+	return info, nil
+}
+
+// planTypeFromString returns a human-readable plan type label.
+func planTypeFromString(plan string) string {
+	switch plan {
+	case "copilot_for_individuals", "copilot_individual":
+		return "Individual"
+	case "copilot_business":
+		return "Business"
+	case "copilot_enterprise":
+		return "Enterprise"
+	default:
+		if plan != "" {
+			return plan
+		}
+		return "Unknown"
+	}
 }
