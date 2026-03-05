@@ -437,13 +437,13 @@ const currentFiles = computed((): FileConfig[] => {
         return generateOpenAIFiles(copilotBase, apiKey)
       }
       // claude tab: use Anthropic-compatible endpoint at /copilot/v1
-      return generateAnthropicFiles(ensureV1(copilotBase), apiKey)
+      return generateAnthropicFiles(ensureV1(copilotBase), apiKey, true)
     default:
       return generateAnthropicFiles(baseUrl, apiKey)
   }
 })
 
-function generateAnthropicFiles(baseUrl: string, apiKey: string): FileConfig[] {
+function generateAnthropicFiles(baseUrl: string, apiKey: string, richSettings = false): FileConfig[] {
   let path: string
   let content: string
 
@@ -472,13 +472,33 @@ $env:ANTHROPIC_AUTH_TOKEN="${apiKey}"`
     ? '~/.claude/settings.json'
     : '%userprofile%\\.claude\\settings.json'
 
-  const vscodeContent = `{
+  let vscodeContent: string
+  if (richSettings) {
+    vscodeContent = JSON.stringify({
+      "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+      "alwaysThinkingEnabled": true,
+      "env": {
+        "ANTHROPIC_AUTH_TOKEN": apiKey,
+        "ANTHROPIC_BASE_URL": baseUrl,
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
+        "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+        "ANTHROPIC_REASONING_MODEL": "claude-opus-4-6"
+      },
+      "includeCoAuthoredBy": false,
+      "model": "claude-sonnet-4-6",
+      "skipDangerousModePermissionPrompt": true
+    }, null, 2)
+  } else {
+    vscodeContent = `{
   "env": {
     "ANTHROPIC_BASE_URL": "${baseUrl}",
     "ANTHROPIC_AUTH_TOKEN": "${apiKey}",
     "CLAUDE_CODE_ATTRIBUTION_HEADER": "0"
   }
 }`
+  }
 
   return [
     { path, content },
