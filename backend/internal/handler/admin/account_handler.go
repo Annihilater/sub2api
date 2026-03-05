@@ -1689,6 +1689,23 @@ func (h *AccountHandler) GetCopilotQuota(c *gin.Context) {
 	response.Success(c, quotaInfo)
 }
 
+// GetCopilotUsageSummary returns quota info for all active Copilot accounts.
+// GET /api/v1/admin/accounts/copilot-usage-summary
+func (h *AccountHandler) GetCopilotUsageSummary(c *gin.Context) {
+	if h.copilotGatewayService == nil {
+		response.InternalError(c, "Copilot gateway service not available")
+		return
+	}
+
+	summaries, err := h.copilotGatewayService.FetchAllCopilotQuotas(c.Request.Context(), h.adminService)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, summaries)
+}
+
 // RefreshTier handles refreshing Google One tier for a single account
 // POST /api/v1/admin/accounts/:id/refresh-tier
 func (h *AccountHandler) RefreshTier(c *gin.Context) {
