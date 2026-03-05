@@ -183,7 +183,7 @@
           <div v-if="copilotQuota.premium_interactions" class="flex items-center justify-between">
             <span class="text-gray-500 dark:text-gray-400">{{ t('admin.accounts.copilot.quota.premiumInteractions') }}</span>
             <span class="font-medium text-gray-900 dark:text-gray-100">
-              <template v-if="copilotQuota.premium_interactions.entitlement === 0 || copilotQuota.premium_interactions.entitlement == null">
+              <template v-if="copilotQuota.premium_interactions.unlimited || copilotQuota.premium_interactions.entitlement === 0 || copilotQuota.premium_interactions.entitlement == null">
                 {{ t('admin.accounts.copilot.quota.unlimited') }}
               </template>
               <template v-else>
@@ -200,11 +200,11 @@
           <div v-if="copilotQuota.chat" class="flex items-center justify-between">
             <span class="text-gray-500 dark:text-gray-400">Chat</span>
             <span class="font-medium text-gray-900 dark:text-gray-100">
-              <template v-if="copilotQuota.chat.entitlement === 0 || copilotQuota.chat.entitlement == null">
+              <template v-if="copilotQuota.chat.unlimited || copilotQuota.chat.entitlement === 0 || copilotQuota.chat.entitlement == null">
                 {{ t('admin.accounts.copilot.quota.unlimited') }}
               </template>
               <template v-else>
-                {{ t('admin.accounts.copilot.quota.remaining', { n: (copilotQuota.chat.entitlement ?? 0) - (copilotQuota.chat.used ?? 0) }) }}
+                {{ t('admin.accounts.copilot.quota.remaining', { n: copilotQuota.chat.remaining ?? ((copilotQuota.chat.entitlement ?? 0) - (copilotQuota.chat.used ?? 0)) }) }}
               </template>
             </span>
           </div>
@@ -212,11 +212,11 @@
           <div v-if="copilotQuota.completions" class="flex items-center justify-between">
             <span class="text-gray-500 dark:text-gray-400">Completions</span>
             <span class="font-medium text-gray-900 dark:text-gray-100">
-              <template v-if="copilotQuota.completions.entitlement === 0 || copilotQuota.completions.entitlement == null">
+              <template v-if="copilotQuota.completions.unlimited || copilotQuota.completions.entitlement === 0 || copilotQuota.completions.entitlement == null">
                 {{ t('admin.accounts.copilot.quota.unlimited') }}
               </template>
               <template v-else>
-                {{ t('admin.accounts.copilot.quota.remaining', { n: (copilotQuota.completions.entitlement ?? 0) - (copilotQuota.completions.used ?? 0) }) }}
+                {{ t('admin.accounts.copilot.quota.remaining', { n: copilotQuota.completions.remaining ?? ((copilotQuota.completions.entitlement ?? 0) - (copilotQuota.completions.used ?? 0)) }) }}
               </template>
             </span>
           </div>

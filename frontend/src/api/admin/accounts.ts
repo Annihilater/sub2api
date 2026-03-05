@@ -523,6 +523,10 @@ export interface CopilotQuotaDetail {
   entitlement?: number
   overage_permitted?: boolean
   used?: number
+  unlimited?: boolean
+  remaining?: number
+  overage_count?: number
+  percent_remaining?: number
 }
 
 export interface CopilotQuotaInfo {
@@ -535,6 +539,15 @@ export interface CopilotQuotaInfo {
   quota_reset_date?: string
 }
 
+export interface CopilotAccountQuotaSummary {
+  account_id: number
+  account_name: string
+  github_login?: string
+  status: string
+  quota_info?: CopilotQuotaInfo
+  error?: string
+}
+
 /**
  * Get Copilot quota information for an account
  * @param id - Account ID
@@ -542,6 +555,17 @@ export interface CopilotQuotaInfo {
  */
 export async function getCopilotQuota(id: number): Promise<CopilotQuotaInfo> {
   const { data } = await apiClient.get<CopilotQuotaInfo>(`/admin/accounts/${id}/copilot-quota`)
+  return data
+}
+
+/**
+ * Get Copilot usage summary for all active Copilot accounts
+ * @returns Array of account quota summaries
+ */
+export async function getCopilotUsageSummary(): Promise<CopilotAccountQuotaSummary[]> {
+  const { data } = await apiClient.get<CopilotAccountQuotaSummary[]>(
+    '/admin/accounts/copilot-usage-summary'
+  )
   return data
 }
 
@@ -621,7 +645,8 @@ export const accountsAPI = {
   exportData,
   importData,
   getAntigravityDefaultModelMapping,
-  getCopilotQuota
+  getCopilotQuota,
+  getCopilotUsageSummary
 }
 
 export default accountsAPI

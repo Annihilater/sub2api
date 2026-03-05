@@ -352,7 +352,8 @@ export default {
     mySubscriptions: '我的订阅',
     buySubscription: '充值/订阅',
     docs: '文档',
-    sora: 'Sora 创作'
+    sora: 'Sora 创作',
+    copilotUsage: 'Copilot 用量'
   },
 
   // Auth
@@ -1653,6 +1654,26 @@ export default {
       revokeConfirm: "确定要撤销 '{user}' 的订阅吗？此操作无法撤销。"
     },
 
+    // Copilot 用量统计页面
+    copilotUsage: {
+      title: 'Copilot 用量',
+      description: '查看所有激活 Copilot 账号的 GitHub Copilot 配额使用情况',
+      noAccounts: '未找到活跃的 Copilot 账号',
+      fetchFailed: '查询失败',
+      noQuotaData: '暂无配额数据',
+      premiumInteractions: 'Premium 对话',
+      completions: '代码补全',
+      remaining: '剩余',
+      used: '已用',
+      percentRemaining: '剩余 {n}',
+      stats: {
+        totalAccounts: '账号总数',
+        successCount: '已加载',
+        errorCount: '失败',
+        overageCount: '超额'
+      }
+    },
+
     // Accounts Management
     accounts: {
       title: '账号管理',
@@ -1756,6 +1777,7 @@ export default {
         status: '状态',
         schedulable: '调度',
         todayStats: '今日统计',
+        copilotQuota: 'Copilot 配额',
         groups: '分组',
         usageWindows: '用量窗口',
         proxy: '代理',

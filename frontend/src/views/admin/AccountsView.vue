@@ -190,6 +190,14 @@
               :error="todayStatsError"
             />
           </template>
+          <template #cell-copilot_quota="{ row }">
+            <CopilotQuotaCell
+              :is-copilot="row.platform === 'copilot'"
+              :quota-info="copilotQuotaByAccountId[String(row.id)] ?? null"
+              :loading="copilotQuotaLoading && !copilotQuotaByAccountId[String(row.id)]"
+              :error="copilotQuotaError[String(row.id)] ?? null"
+            />
+          </template>
           <template #cell-groups="{ row }">
             <AccountGroupsCell :groups="row.groups" :max-display="4" />
           </template>
@@ -306,11 +314,13 @@ import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
 import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
+import CopilotQuotaCell from '@/components/account/CopilotQuotaCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
 import { formatDateTime, formatRelativeTime } from '@/utils/format'
 import type { Account, AccountPlatform, AccountType, Proxy, AdminGroup, WindowStats, ClaudeModel } from '@/types'
+import type { CopilotQuotaInfo } from '@/api/admin/accounts'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -365,7 +375,7 @@ const exportingData = ref(false)
 const showColumnDropdown = ref(false)
 const columnDropdownRef = ref<HTMLElement | null>(null)
 const hiddenColumns = reactive<Set<string>>(new Set())
-const DEFAULT_HIDDEN_COLUMNS = ['today_stats', 'proxy', 'notes', 'priority', 'rate_multiplier']
+const DEFAULT_HIDDEN_COLUMNS = ['today_stats', 'proxy', 'notes', 'priority', 'rate_multiplier', 'copilot_quota']
 const HIDDEN_COLUMNS_KEY = 'account-hidden-columns'
 
 // Sorting settings
@@ -389,6 +399,12 @@ const todayStatsLoading = ref(false)
 const todayStatsError = ref<string | null>(null)
 const todayStatsReqSeq = ref(0)
 const pendingTodayStatsRefresh = ref(false)
+
+// Copilot quota column state
+const copilotQuotaByAccountId = ref<Record<string, CopilotQuotaInfo>>({})
+const copilotQuotaLoading = ref(false)
+const copilotQuotaError = ref<Record<string, string>>({})
+const copilotQuotaReqSeq = ref(0)
 
 const buildDefaultTodayStats = (): WindowStats => ({
   requests: 0,
@@ -435,6 +451,38 @@ const refreshTodayStatsBatch = async () => {
     if (reqSeq === todayStatsReqSeq.value) {
       todayStatsLoading.value = false
     }
+  }
+}
+
+// Load copilot quota for all copilot accounts on the current page concurrently
+const refreshCopilotQuotaBatch = async () => {
+  if (hiddenColumns.has('copilot_quota')) return
+
+  const copilotAccounts = accounts.value.filter(a => a.platform === 'copilot')
+  if (copilotAccounts.length === 0) {
+    copilotQuotaLoading.value = false
+    return
+  }
+
+  const reqSeq = ++copilotQuotaReqSeq.value
+  copilotQuotaLoading.value = true
+  copilotQuotaError.value = {}
+
+  await Promise.allSettled(
+    copilotAccounts.map(async (account) => {
+      try {
+        const info = await adminAPI.accounts.getCopilotQuota(account.id)
+        if (reqSeq !== copilotQuotaReqSeq.value) return
+        copilotQuotaByAccountId.value = { ...copilotQuotaByAccountId.value, [String(account.id)]: info }
+      } catch (e) {
+        if (reqSeq !== copilotQuotaReqSeq.value) return
+        copilotQuotaError.value = { ...copilotQuotaError.value, [String(account.id)]: e instanceof Error ? e.message : 'Failed' }
+      }
+    })
+  )
+
+  if (reqSeq === copilotQuotaReqSeq.value) {
+    copilotQuotaLoading.value = false
   }
 }
 
@@ -536,6 +584,11 @@ const toggleColumn = (key: string) => {
       console.error('Failed to load account today stats after showing column:', error)
     })
   }
+  if (key === 'copilot_quota' && wasHidden) {
+    refreshCopilotQuotaBatch().catch((error) => {
+      console.error('Failed to load copilot quota after showing column:', error)
+    })
+  }
 }
 
 const isColumnVisible = (key: string) => !hiddenColumns.has(key)
@@ -573,7 +626,7 @@ const load = async () => {
     isFirstLoad.value = false
     delete (params as any).lite
   }
-  await refreshTodayStatsBatch()
+  await Promise.all([refreshTodayStatsBatch(), refreshCopilotQuotaBatch()])
 }
 
 const reload = async () => {
@@ -581,7 +634,7 @@ const reload = async () => {
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
   await baseReload()
-  await refreshTodayStatsBatch()
+  await Promise.all([refreshTodayStatsBatch(), refreshCopilotQuotaBatch()])
 }
 
 const debouncedReload = () => {
@@ -610,6 +663,9 @@ watch(loading, (isLoading, wasLoading) => {
     pendingTodayStatsRefresh.value = false
     refreshTodayStatsBatch().catch((error) => {
       console.error('Failed to refresh account today stats after table load:', error)
+    })
+    refreshCopilotQuotaBatch().catch((error) => {
+      console.error('Failed to refresh copilot quota after table load:', error)
     })
   }
 })
@@ -773,7 +829,8 @@ const allColumns = computed(() => {
     { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false },
     { key: 'status', label: t('admin.accounts.columns.status'), sortable: true },
     { key: 'schedulable', label: t('admin.accounts.columns.schedulable'), sortable: true },
-    { key: 'today_stats', label: t('admin.accounts.columns.todayStats'), sortable: false }
+    { key: 'today_stats', label: t('admin.accounts.columns.todayStats'), sortable: false },
+    { key: 'copilot_quota', label: t('admin.accounts.columns.copilotQuota'), sortable: false }
   ]
   if (!authStore.isSimpleMode) {
     c.push({ key: 'groups', label: t('admin.accounts.columns.groups'), sortable: false })

@@ -82,3 +82,4 @@ export default adminAPI
 export type { BalanceHistoryItem } from './users'
 export type { ErrorPassthroughRule, CreateRuleRequest, UpdateRuleRequest } from './errorPassthrough'
 export type { BackupAgentHealth, DataManagementConfig } from './dataManagement'
+export type { CopilotQuotaDetail, CopilotQuotaInfo, CopilotAccountQuotaSummary } from './accounts'

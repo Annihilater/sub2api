@@ -351,7 +351,8 @@ export default {
     mySubscriptions: 'My Subscriptions',
     buySubscription: 'Recharge / Subscription',
     docs: 'Docs',
-    sora: 'Sora Studio'
+    sora: 'Sora Studio',
+    copilotUsage: 'Copilot Usage'
   },
 
   // Auth
@@ -1565,9 +1566,28 @@ export default {
         "Are you sure you want to revoke the subscription for '{user}'? This action cannot be undone."
     },
 
+    // Copilot Usage Summary Page
+    copilotUsage: {
+      title: 'Copilot Usage',
+      description: 'View GitHub Copilot quota usage across all active Copilot accounts',
+      noAccounts: 'No active Copilot accounts found',
+      fetchFailed: 'Fetch Failed',
+      noQuotaData: 'No quota data available',
+      premiumInteractions: 'Premium Interactions',
+      completions: 'Code Completions',
+      remaining: 'remaining',
+      used: 'Used',
+      percentRemaining: '{n} remaining',
+      stats: {
+        totalAccounts: 'Total Accounts',
+        successCount: 'Loaded',
+        errorCount: 'Failed',
+        overageCount: 'Overaged'
+      }
+    },
+
     // Accounts
     accounts: {
-      title: 'Account Management',
       description: 'Manage AI platform accounts and credentials',
       createAccount: 'Create Account',
       autoRefresh: 'Auto Refresh',
@@ -1706,6 +1726,7 @@ export default {
         status: 'Status',
         schedulable: 'Schedulable',
         todayStats: 'Today Stats',
+        copilotQuota: 'Copilot Quota',
         groups: 'Groups',
         usageWindows: 'Usage Windows',
         proxy: 'Proxy',
