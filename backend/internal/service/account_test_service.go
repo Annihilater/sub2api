@@ -1225,13 +1225,103 @@ func (s *AccountTestService) testAntigravityAccountConnection(c *gin.Context, ac
 	return nil
 }
 
+// copilotTestEndpoint represents which Copilot API endpoint to use for testing.
+type copilotTestEndpoint int
+
+const (
+	copilotEndpointChatCompletions copilotTestEndpoint = iota
+	copilotEndpointResponses
+	copilotEndpointMessages
+)
+
+// selectCopilotTestEndpoint determines which test endpoint to use for the given model.
+// It queries the /models endpoint to find the model's supported_endpoints, then picks:
+//   - "/responses"       → copilotEndpointResponses
+//   - "/v1/messages"     → copilotEndpointMessages
+//   - "/chat/completions" or empty → copilotEndpointChatCompletions (default)
+func (s *AccountTestService) selectCopilotTestEndpoint(ctx context.Context, copilotToken, baseURL, modelID string) copilotTestEndpoint {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/models", nil)
+	if err != nil {
+		return copilotEndpointChatCompletions
+	}
+	req.Header.Set("Authorization", "Bearer "+copilotToken)
+	for k, vals := range copilot.CopilotHeaders("user", false) {
+		for _, v := range vals {
+			req.Header.Set(k, v)
+		}
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return copilotEndpointChatCompletions
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return copilotEndpointChatCompletions
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return copilotEndpointChatCompletions
+	}
+
+	var modelsResp struct {
+		Data []struct {
+			ID                 string   `json:"id"`
+			SupportedEndpoints []string `json:"supported_endpoints"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &modelsResp); err != nil {
+		return copilotEndpointChatCompletions
+	}
+
+	for _, m := range modelsResp.Data {
+		if m.ID != modelID {
+			continue
+		}
+		if len(m.SupportedEndpoints) == 0 {
+			return copilotEndpointChatCompletions
+		}
+		// Check in priority order: responses > messages > chat/completions
+		hasResponses := false
+		hasMessages := false
+		hasChatCompletions := false
+		for _, ep := range m.SupportedEndpoints {
+			switch ep {
+			case "/responses":
+				hasResponses = true
+			case "/v1/messages":
+				hasMessages = true
+			case "/chat/completions":
+				hasChatCompletions = true
+			}
+		}
+		if hasResponses && !hasChatCompletions && !hasMessages {
+			return copilotEndpointResponses
+		}
+		if hasMessages && !hasChatCompletions && !hasResponses {
+			return copilotEndpointMessages
+		}
+		// Default: prefer chat/completions
+		return copilotEndpointChatCompletions
+	}
+
+	return copilotEndpointChatCompletions
+}
+
 // testCopilotAccountConnection tests a GitHub Copilot account's connection.
 //
 // The test flow:
 //  1. Validate github_token credential exists
 //  2. Exchange GitHub token for a short-lived Copilot API token (validates auth)
-//  3. Send a minimal chat/completions request to verify API access
-//  4. Stream the response back to the client as SSE events
+//  3. Detect appropriate test endpoint from the model's supported_endpoints:
+//     - /chat/completions (default, most models)
+//     - /responses (Codex and similar models)
+//     - /v1/messages (future Anthropic-native models)
+//  4. Send a minimal request to verify API access
+//  5. Stream the response back to the client as SSE events
 func (s *AccountTestService) testCopilotAccountConnection(c *gin.Context, account *Account, modelID string) error {
 	ctx := c.Request.Context()
 
@@ -1247,13 +1337,11 @@ func (s *AccountTestService) testCopilotAccountConnection(c *gin.Context, accoun
 		testModelID = copilot.DefaultTestModel
 	}
 
-	// Apply model mapping if configured
-	if account.Type == "apikey" {
-		mapping := account.GetModelMapping()
-		if mapped, ok := mapping[testModelID]; ok && mapped != "" {
-			testModelID = mapped
-		}
-	}
+	// Apply model mapping and normalize model name for Copilot API.
+	// normalizeCopilotModel handles both account-level mapping and the generic
+	// dash-to-dot conversion (e.g. "claude-sonnet-4-6" → "claude-sonnet-4.6")
+	// required by the Copilot API.
+	testModelID = normalizeCopilotModel(testModelID, account.GetModelMapping())
 
 	// Set SSE headers
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
@@ -1281,9 +1369,25 @@ func (s *AccountTestService) testCopilotAccountConnection(c *gin.Context, accoun
 		baseURL = strings.TrimRight(customURL, "/")
 	}
 
-	// Step 3: Send a minimal streaming chat/completions request
+	// Step 3: Select the test endpoint based on what the model supports
+	endpoint := s.selectCopilotTestEndpoint(ctx, copilotToken, baseURL, testModelID)
+
+	switch endpoint {
+	case copilotEndpointResponses:
+		return s.testCopilotWithResponsesEndpoint(c, ctx, copilotToken, baseURL, testModelID)
+	case copilotEndpointMessages:
+		return s.testCopilotWithMessagesEndpoint(c, ctx, copilotToken, baseURL, testModelID)
+	default:
+		return s.testCopilotWithChatCompletions(c, ctx, copilotToken, baseURL, testModelID)
+	}
+}
+
+// testCopilotWithChatCompletions tests a model via the /chat/completions endpoint.
+func (s *AccountTestService) testCopilotWithChatCompletions(c *gin.Context, ctx context.Context, copilotToken, baseURL, modelID string) error {
+	s.sendEvent(c, TestEvent{Type: "content", Text: "Testing via /chat/completions...\n"})
+
 	payload := map[string]any{
-		"model": testModelID,
+		"model": modelID,
 		"messages": []map[string]string{
 			{"role": "user", "content": "Say 'Hello from Copilot!' in one short sentence."},
 		},
@@ -1295,13 +1399,10 @@ func (s *AccountTestService) testCopilotAccountConnection(c *gin.Context, accoun
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to build test payload: %s", err.Error()))
 	}
 
-	upstreamURL := baseURL + "/chat/completions"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bytes.NewReader(payloadBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(payloadBytes))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to build request: %s", err.Error()))
 	}
-
-	// Set Copilot headers
 	req.Header.Set("Authorization", "Bearer "+copilotToken)
 	req.Header.Set("Content-Type", "application/json")
 	for k, vals := range copilot.CopilotHeaders("user", false) {
@@ -1310,7 +1411,6 @@ func (s *AccountTestService) testCopilotAccountConnection(c *gin.Context, accoun
 		}
 	}
 
-	// Send request
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -1323,9 +1423,97 @@ func (s *AccountTestService) testCopilotAccountConnection(c *gin.Context, accoun
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Copilot API returned HTTP %d: %s", resp.StatusCode, string(body)))
 	}
 
-	// Step 4: Process streaming response
 	s.processCopilotStream(c, resp.Body)
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	return nil
+}
 
+// testCopilotWithResponsesEndpoint tests a model via the /responses endpoint (e.g. Codex models).
+func (s *AccountTestService) testCopilotWithResponsesEndpoint(c *gin.Context, ctx context.Context, copilotToken, baseURL, modelID string) error {
+	s.sendEvent(c, TestEvent{Type: "content", Text: "Testing via /responses (Codex endpoint)...\n"})
+
+	payload := map[string]any{
+		"model": modelID,
+		"input": "Say 'Hello from Copilot!' in one short sentence.",
+		"stream": true,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to build test payload: %s", err.Error()))
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/responses", bytes.NewReader(payloadBytes))
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to build request: %s", err.Error()))
+	}
+	req.Header.Set("Authorization", "Bearer "+copilotToken)
+	req.Header.Set("Content-Type", "application/json")
+	for k, vals := range copilot.CopilotHeaders("user", false) {
+		for _, v := range vals {
+			req.Header.Set(k, v)
+		}
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Copilot API request failed: %s", err.Error()))
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Copilot API returned HTTP %d: %s", resp.StatusCode, string(body)))
+	}
+
+	s.processCopilotResponsesStream(c, resp.Body)
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	return nil
+}
+
+// testCopilotWithMessagesEndpoint tests a model via the /v1/messages endpoint.
+func (s *AccountTestService) testCopilotWithMessagesEndpoint(c *gin.Context, ctx context.Context, copilotToken, baseURL, modelID string) error {
+	s.sendEvent(c, TestEvent{Type: "content", Text: "Testing via /v1/messages...\n"})
+
+	payload := map[string]any{
+		"model":      modelID,
+		"max_tokens": 50,
+		"messages": []map[string]string{
+			{"role": "user", "content": "Say 'Hello from Copilot!' in one short sentence."},
+		},
+		"stream": true,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to build test payload: %s", err.Error()))
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/v1/messages", bytes.NewReader(payloadBytes))
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to build request: %s", err.Error()))
+	}
+	req.Header.Set("Authorization", "Bearer "+copilotToken)
+	req.Header.Set("Content-Type", "application/json")
+	for k, vals := range copilot.CopilotHeaders("user", false) {
+		for _, v := range vals {
+			req.Header.Set(k, v)
+		}
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Copilot API request failed: %s", err.Error()))
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Copilot API returned HTTP %d: %s", resp.StatusCode, string(body)))
+	}
+
+	// /v1/messages streaming uses Anthropic SSE format; forward content_block_delta text
+	s.processCopilotAnthropicStream(c, resp.Body)
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 	return nil
 }
@@ -1363,6 +1551,77 @@ func (s *AccountTestService) processCopilotStream(c *gin.Context, body io.Reader
 			if choice.Delta.Content != "" {
 				s.sendEvent(c, TestEvent{Type: "content", Text: choice.Delta.Content})
 			}
+		}
+	}
+}
+
+// processCopilotResponsesStream reads SSE events from a Copilot /responses streaming
+// response and forwards output text deltas to the client.
+// The Responses API emits events of type "response.output_text.delta".
+func (s *AccountTestService) processCopilotResponsesStream(c *gin.Context, body io.Reader) {
+	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 64*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := line[6:]
+		if data == "[DONE]" {
+			break
+		}
+
+		// Parse Responses API streaming event
+		var event struct {
+			Type  string `json:"type"`
+			Delta string `json:"delta"`
+			// response.output_text.delta has "delta" as the text increment
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal([]byte(data), &event); err != nil {
+			continue
+		}
+
+		switch event.Type {
+		case "response.output_text.delta":
+			if event.Delta != "" {
+				s.sendEvent(c, TestEvent{Type: "content", Text: event.Delta})
+			}
+		case "response.done", "done":
+			return
+		}
+	}
+}
+
+// processCopilotAnthropicStream reads SSE events from a Copilot /v1/messages streaming
+// response (Anthropic format) and forwards content_block_delta text to the client.
+func (s *AccountTestService) processCopilotAnthropicStream(c *gin.Context, body io.Reader) {
+	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 64*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := line[6:]
+
+		var event struct {
+			Type  string `json:"type"`
+			Delta struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"delta"`
+		}
+		if err := json.Unmarshal([]byte(data), &event); err != nil {
+			continue
+		}
+
+		if event.Type == "content_block_delta" && event.Delta.Text != "" {
+			s.sendEvent(c, TestEvent{Type: "content", Text: event.Delta.Text})
 		}
 	}
 }
