@@ -184,6 +184,8 @@ const defaultClientTab = computed(() => {
       return 'gemini'
     case 'antigravity':
       return 'claude'
+    case 'copilot':
+      return 'claude'
     default:
       return 'claude'
   }
@@ -282,6 +284,12 @@ const clientTabs = computed((): TabConfig[] => {
         { id: 'gemini', label: t('keys.useKeyModal.cliTabs.geminiCli'), icon: SparkleIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
+    case 'copilot':
+      return [
+        { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
+        { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
+        { id: 'codex-ws', label: t('keys.useKeyModal.cliTabs.codexCliWs'), icon: TerminalIcon }
+      ]
     default:
       return [
         { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
@@ -321,6 +329,8 @@ const platformDescription = computed(() => {
       return t('keys.useKeyModal.gemini.description')
     case 'antigravity':
       return t('keys.useKeyModal.antigravity.description')
+    case 'copilot':
+      return t('keys.useKeyModal.copilot.description')
     default:
       return t('keys.useKeyModal.description')
   }
@@ -338,6 +348,10 @@ const platformNote = computed(() => {
       return activeClientTab.value === 'claude'
         ? t('keys.useKeyModal.antigravity.claudeNote')
         : t('keys.useKeyModal.antigravity.geminiNote')
+    case 'copilot':
+      return activeClientTab.value === 'claude'
+        ? t('keys.useKeyModal.copilot.claudeNote')
+        : t('keys.useKeyModal.copilot.codexNote')
     default:
       return t('keys.useKeyModal.note')
   }
@@ -381,6 +395,8 @@ const currentFiles = computed((): FileConfig[] => {
     const trimmed = baseRoot.replace(/\/+$/, '')
     return trimmed.endsWith('/v1beta') ? trimmed : `${trimmed}/v1beta`
   })()
+  // copilot uses /copilot path prefix (no /v1 suffix needed — endpoints are /copilot/v1/messages and /copilot)
+  const copilotBase = `${baseRoot}/copilot`
 
   if (activeClientTab.value === 'opencode') {
     switch (props.platform) {
@@ -413,6 +429,15 @@ const currentFiles = computed((): FileConfig[] => {
         return [generateGeminiCliContent(`${baseUrl}/antigravity`, apiKey)]
       }
       return generateAnthropicFiles(`${baseUrl}/antigravity`, apiKey)
+    case 'copilot':
+      if (activeClientTab.value === 'codex-ws') {
+        return generateOpenAIWsFiles(copilotBase, apiKey)
+      }
+      if (activeClientTab.value === 'codex') {
+        return generateOpenAIFiles(copilotBase, apiKey)
+      }
+      // claude tab: use Anthropic-compatible endpoint at /copilot/v1
+      return generateAnthropicFiles(ensureV1(copilotBase), apiKey)
     default:
       return generateAnthropicFiles(baseUrl, apiKey)
   }

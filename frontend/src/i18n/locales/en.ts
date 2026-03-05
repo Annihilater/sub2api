@@ -610,6 +610,11 @@ export default {
         subtitle: 'opencode.json',
         hint: 'Config path: ~/.config/opencode/opencode.json (or opencode.jsonc), create if not exists. Use default providers (openai/anthropic/google) or custom provider_id. API Key can be configured directly or via /connect command. This is an example, adjust models and options as needed.',
       },
+      copilot: {
+        description: 'Configure your client to route GitHub Copilot requests through the /copilot path. Claude Code uses the Anthropic-compatible endpoint; Codex CLI uses the OpenAI Responses endpoint.',
+        claudeNote: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
+        codexNote: 'Make sure the config directory exists. macOS/Linux users can run mkdir -p ~/.codex to create it.',
+      },
     },
     customKeyLabel: 'Custom Key',
     customKeyPlaceholder: 'Enter your custom key (min 16 chars)',
