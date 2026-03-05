@@ -267,6 +267,176 @@ func (h *CopilotGatewayHandler) Models(c *gin.Context) {
 	c.Data(http.StatusOK, "application/json", body)
 }
 
+// Responses handles Copilot /responses endpoint (OpenAI Responses API, used by Codex CLI).
+//
+// Codex CLI sets wire_api = "responses" and base_url = ".../copilot", so it
+// sends requests to {base_url}/responses — i.e. /copilot/responses.
+// The request/response format is passed through as-is to the Copilot API's
+// /responses endpoint; no protocol translation is needed.
+func (h *CopilotGatewayHandler) Responses(c *gin.Context) {
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return
+	}
+
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
+		return
+	}
+	reqLog := requestLogger(
+		c,
+		"handler.copilot_gateway.responses",
+		zap.Int64("user_id", subject.UserID),
+		zap.Int64("api_key_id", apiKey.ID),
+		zap.Any("group_id", apiKey.GroupID),
+	)
+
+	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+	if err != nil {
+		if maxErr, ok := extractMaxBytesError(err); ok {
+			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+			return
+		}
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		return
+	}
+	if len(body) == 0 {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+		return
+	}
+
+	setOpsRequestContext(c, "", false, body)
+
+	if !gjson.ValidBytes(body) {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+		return
+	}
+
+	modelResult := gjson.GetBytes(body, "model")
+	if !modelResult.Exists() || modelResult.Type != gjson.String || modelResult.String() == "" {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+		return
+	}
+	reqModel := modelResult.String()
+	reqStream := gjson.GetBytes(body, "stream").Bool()
+	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
+
+	setOpsRequestContext(c, reqModel, reqStream, body)
+
+	subscription, _ := middleware2.GetSubscriptionFromContext(c)
+	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription); err != nil {
+		reqLog.Info("copilot.responses.billing_eligibility_check_failed", zap.Error(err))
+		status, code, message := billingErrorDetails(err)
+		h.errorResponse(c, status, code, message)
+		return
+	}
+
+	ctx := c.Request.Context()
+	userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlot(ctx, subject.UserID, subject.Concurrency)
+	if err != nil {
+		reqLog.Warn("copilot.responses.user_slot_acquire_failed", zap.Error(err))
+		h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Concurrency limit exceeded, please retry later")
+		return
+	}
+	if !userAcquired {
+		h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Too many concurrent requests, please retry later")
+		return
+	}
+	if userReleaseFunc != nil {
+		defer userReleaseFunc()
+	}
+
+	failedAccountIDs := make(map[int64]struct{})
+	switchCount := 0
+
+	for {
+		account, err := h.gatewayService.SelectAccountForModelWithExclusions(
+			ctx,
+			apiKey.GroupID,
+			"",
+			reqModel,
+			failedAccountIDs,
+		)
+		if err != nil || account == nil {
+			if len(failedAccountIDs) == 0 {
+				reqLog.Warn("copilot.responses.account_select_failed", zap.Error(err))
+				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No available Copilot accounts")
+			} else {
+				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "All Copilot accounts failed")
+			}
+			return
+		}
+		reqLog.Debug("copilot.responses.account_selected",
+			zap.Int64("account_id", account.ID),
+			zap.String("account_name", account.Name))
+		setOpsSelectedAccount(c, account.ID, account.Platform)
+
+		result, fwdErr := h.copilotGatewayService.ForwardResponses(ctx, c, account, body)
+		if fwdErr != nil {
+			failedAccountIDs[account.ID] = struct{}{}
+			switchCount++
+			if switchCount >= h.maxAccountSwitches {
+				reqLog.Warn("copilot.responses.failover_exhausted",
+					zap.Int64("account_id", account.ID),
+					zap.Int("switch_count", switchCount),
+					zap.Error(fwdErr))
+				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
+				return
+			}
+			reqLog.Warn("copilot.responses.upstream_failover_switching",
+				zap.Int64("account_id", account.ID),
+				zap.Int("switch_count", switchCount),
+				zap.Error(fwdErr))
+			continue
+		}
+
+		if result != nil && result.StatusCode != http.StatusOK {
+			reqLog.Debug("copilot.responses.completed_with_error",
+				zap.Int64("account_id", account.ID),
+				zap.Int("status", result.StatusCode))
+			return
+		}
+
+		if result != nil && result.Usage != nil {
+			userAgent := c.GetHeader("User-Agent")
+			clientIP := ip.GetClientIP(c)
+			capturedResult := result
+			capturedAccount := account
+			go func() {
+				recordCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				fwdResult := &service.ForwardResult{
+					Model:  capturedResult.Model,
+					Stream: reqStream,
+					Usage: service.ClaudeUsage{
+						InputTokens:  capturedResult.Usage.PromptTokens,
+						OutputTokens: capturedResult.Usage.CompletionTokens,
+					},
+				}
+				if err := h.gatewayService.RecordUsage(recordCtx, &service.RecordUsageInput{
+					Result:        fwdResult,
+					APIKey:        apiKey,
+					User:          apiKey.User,
+					Account:       capturedAccount,
+					Subscription:  subscription,
+					UserAgent:     userAgent,
+					IPAddress:     clientIP,
+					APIKeyService: nil,
+				}); err != nil {
+					reqLog.Error("copilot.responses.record_usage_failed", zap.Error(err))
+				}
+			}()
+		}
+
+		reqLog.Debug("copilot.responses.completed",
+			zap.Int64("account_id", account.ID),
+			zap.Int("switch_count", switchCount))
+		return
+	}
+}
+
 // errorResponse returns OpenAI API format error response.
 func (h *CopilotGatewayHandler) errorResponse(c *gin.Context, status int, errType, message string) {
 	c.JSON(status, gin.H{
