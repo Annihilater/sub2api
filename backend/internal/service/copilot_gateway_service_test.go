@@ -258,7 +258,7 @@ func TestCopilotGatewayService_HandleErrorResponse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	t.Run("401 invalidates token", func(t *testing.T) {
-		provider := NewCopilotTokenProvider(nil)
+		provider := NewCopilotTokenProvider()
 		// Pre-populate token cache
 		provider.tokens[42] = nil // just to verify it gets deleted
 
@@ -293,7 +293,7 @@ func TestCopilotGatewayService_HandleErrorResponse(t *testing.T) {
 	})
 
 	t.Run("429 forwards error", func(t *testing.T) {
-		svc := &CopilotGatewayService{tokenProvider: NewCopilotTokenProvider(nil)}
+		svc := &CopilotGatewayService{tokenProvider: NewCopilotTokenProvider()}
 
 		errBody := `{"error":{"message":"Rate limited"}}`
 		resp := &http.Response{
@@ -394,7 +394,7 @@ func TestCopilotGatewayService_ListModels(t *testing.T) {
 		}))
 		defer server.Close()
 
-		provider := NewCopilotTokenProvider(nil)
+		provider := NewCopilotTokenProvider()
 		svc := NewCopilotGatewayService(provider)
 
 		// Pre-populate token so no exchange is needed
@@ -430,7 +430,7 @@ func TestCopilotGatewayService_ListModels(t *testing.T) {
 		}))
 		defer server.Close()
 
-		provider := NewCopilotTokenProvider(nil)
+		provider := NewCopilotTokenProvider()
 		svc := NewCopilotGatewayService(provider)
 
 		tok := newCopilotTestToken("tok")

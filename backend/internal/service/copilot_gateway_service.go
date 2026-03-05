@@ -170,7 +170,7 @@ func (s *CopilotGatewayService) handleStreamingResponse(
 	model string,
 	startTime time.Time,
 ) (*CopilotForwardResult, error) {
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -229,7 +229,7 @@ func (s *CopilotGatewayService) handleNonStreamingResponse(
 	model string,
 	startTime time.Time,
 ) (*CopilotForwardResult, error) {
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -267,7 +267,7 @@ func (s *CopilotGatewayService) handleErrorResponse(
 	resp *http.Response,
 	account *Account,
 ) (*CopilotForwardResult, error) {
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 
@@ -475,7 +475,7 @@ func (s *CopilotGatewayService) ListModels(
 	if err != nil {
 		return nil, fmt.Errorf("copilot: models request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -620,7 +620,6 @@ func rewriteModelIDsForClient(body []byte) []byte {
 	})
 	return result
 }
-
 
 // OpenAI Responses API gateway (Codex CLI)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -822,7 +821,7 @@ func (s *CopilotGatewayService) handleMessagesNonStreamingResponse(
 	model string,
 	startTime time.Time,
 ) (*CopilotForwardResult, error) {
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -858,7 +857,7 @@ func (s *CopilotGatewayService) handleMessagesStreamingResponse(
 	model string,
 	startTime time.Time,
 ) (*CopilotForwardResult, error) {
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -1032,7 +1031,7 @@ func (s *CopilotGatewayService) FetchQuota(
 	if err != nil {
 		return nil, fmt.Errorf("copilot: quota request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

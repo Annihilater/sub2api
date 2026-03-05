@@ -1433,8 +1433,8 @@ func (s *AccountTestService) testCopilotWithResponsesEndpoint(c *gin.Context, ct
 	s.sendEvent(c, TestEvent{Type: "content", Text: "Testing via /responses (Codex endpoint)...\n"})
 
 	payload := map[string]any{
-		"model": modelID,
-		"input": "Say 'Hello from Copilot!' in one short sentence.",
+		"model":  modelID,
+		"input":  "Say 'Hello from Copilot!' in one short sentence.",
 		"stream": true,
 	}
 	payloadBytes, err := json.Marshal(payload)

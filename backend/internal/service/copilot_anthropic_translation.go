@@ -23,16 +23,16 @@ import (
 
 // AnthropicMessagesRequest is the body of a POST /v1/messages request.
 type AnthropicMessagesRequest struct {
-	Model         string              `json:"model"`
-	Messages      []AnthropicMessage  `json:"messages"`
-	MaxTokens     int                 `json:"max_tokens"`
-	System        json.RawMessage     `json:"system,omitempty"` // string or []AnthropicTextBlock
-	Metadata      *AnthropicMetadata  `json:"metadata,omitempty"`
-	StopSequences []string            `json:"stop_sequences,omitempty"`
-	Stream        bool                `json:"stream,omitempty"`
-	Temperature   *float64            `json:"temperature,omitempty"`
-	TopP          *float64            `json:"top_p,omitempty"`
-	Tools         []AnthropicTool     `json:"tools,omitempty"`
+	Model         string               `json:"model"`
+	Messages      []AnthropicMessage   `json:"messages"`
+	MaxTokens     int                  `json:"max_tokens"`
+	System        json.RawMessage      `json:"system,omitempty"` // string or []AnthropicTextBlock
+	Metadata      *AnthropicMetadata   `json:"metadata,omitempty"`
+	StopSequences []string             `json:"stop_sequences,omitempty"`
+	Stream        bool                 `json:"stream,omitempty"`
+	Temperature   *float64             `json:"temperature,omitempty"`
+	TopP          *float64             `json:"top_p,omitempty"`
+	Tools         []AnthropicTool      `json:"tools,omitempty"`
 	ToolChoice    *AnthropicToolChoice `json:"tool_choice,omitempty"`
 }
 
@@ -42,7 +42,7 @@ type AnthropicMetadata struct {
 
 // AnthropicMessage is a single turn in the conversation.
 type AnthropicMessage struct {
-	Role    string          `json:"role"` // "user" | "assistant"
+	Role    string          `json:"role"`    // "user" | "assistant"
 	Content json.RawMessage `json:"content"` // string or []block
 }
 
@@ -67,7 +67,7 @@ type AnthropicImageBlockSource struct {
 
 // AnthropicToolResultBlock is the result of a tool call.
 type AnthropicToolResultBlock struct {
-	Type      string `json:"type"`        // "tool_result"
+	Type      string `json:"type"` // "tool_result"
 	ToolUseID string `json:"tool_use_id"`
 	Content   string `json:"content"`
 	IsError   bool   `json:"is_error,omitempty"`
@@ -106,14 +106,14 @@ type AnthropicToolChoice struct {
 
 // AnthropicMessagesResponse is the response body for a non-streaming request.
 type AnthropicMessagesResponse struct {
-	ID           string                   `json:"id"`
-	Type         string                   `json:"type"`    // "message"
-	Role         string                   `json:"role"`    // "assistant"
-	Model        string                   `json:"model"`
-	Content      []json.RawMessage        `json:"content"` // []AnthropicTextBlock | []AnthropicToolUseBlock
-	StopReason   string                   `json:"stop_reason"`
-	StopSequence *string                  `json:"stop_sequence"`
-	Usage        AnthropicUsage           `json:"usage"`
+	ID           string            `json:"id"`
+	Type         string            `json:"type"` // "message"
+	Role         string            `json:"role"` // "assistant"
+	Model        string            `json:"model"`
+	Content      []json.RawMessage `json:"content"` // []AnthropicTextBlock | []AnthropicToolUseBlock
+	StopReason   string            `json:"stop_reason"`
+	StopSequence *string           `json:"stop_sequence"`
+	Usage        AnthropicUsage    `json:"usage"`
 }
 
 // AnthropicUsage holds token usage counts.
@@ -130,21 +130,21 @@ type AnthropicUsage struct {
 
 // openAIChatRequest is the body sent to Copilot's /chat/completions.
 type openAIChatRequest struct {
-	Model       string           `json:"model"`
-	Messages    []openAIMessage  `json:"messages"`
-	MaxTokens   int              `json:"max_tokens,omitempty"`
-	Stop        []string         `json:"stop,omitempty"`
-	Stream      bool             `json:"stream"`
-	Temperature *float64         `json:"temperature,omitempty"`
-	TopP        *float64         `json:"top_p,omitempty"`
-	User        string           `json:"user,omitempty"`
-	Tools       []openAITool     `json:"tools,omitempty"`
-	ToolChoice  any              `json:"tool_choice,omitempty"`
+	Model       string          `json:"model"`
+	Messages    []openAIMessage `json:"messages"`
+	MaxTokens   int             `json:"max_tokens,omitempty"`
+	Stop        []string        `json:"stop,omitempty"`
+	Stream      bool            `json:"stream"`
+	Temperature *float64        `json:"temperature,omitempty"`
+	TopP        *float64        `json:"top_p,omitempty"`
+	User        string          `json:"user,omitempty"`
+	Tools       []openAITool    `json:"tools,omitempty"`
+	ToolChoice  any             `json:"tool_choice,omitempty"`
 }
 
 // openAIMessage is a single message in an OpenAI chat request.
 type openAIMessage struct {
-	Role       string           `json:"role"` // system | user | assistant | tool
+	Role       string           `json:"role"`    // system | user | assistant | tool
 	Content    any              `json:"content"` // string or []openAIContentPart
 	ToolCallID string           `json:"tool_call_id,omitempty"`
 	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
@@ -164,8 +164,8 @@ type openAIImageURLObject struct {
 
 // openAITool is a function tool definition.
 type openAITool struct {
-	Type     string          `json:"type"` // "function"
-	Function openAIFunction  `json:"function"`
+	Type     string         `json:"type"` // "function"
+	Function openAIFunction `json:"function"`
 }
 
 // openAIFunction describes a callable function.
@@ -177,9 +177,9 @@ type openAIFunction struct {
 
 // openAIToolCall is a tool call made by the model.
 type openAIToolCall struct {
-	ID       string              `json:"id"`
-	Type     string              `json:"type"` // "function"
-	Function openAIFunctionCall  `json:"function"`
+	ID       string             `json:"id"`
+	Type     string             `json:"type"` // "function"
+	Function openAIFunctionCall `json:"function"`
 }
 
 // openAIFunctionCall is the function being called.
@@ -204,18 +204,18 @@ type openAIToolCallDelta struct {
 
 // openAIChatResponse is a non-streaming response from Copilot.
 type openAIChatResponse struct {
-	ID      string          `json:"id"`
-	Object  string          `json:"object"`
-	Model   string          `json:"model"`
-	Choices []openAIChoice  `json:"choices"`
-	Usage   *openAIUsage    `json:"usage,omitempty"`
+	ID      string         `json:"id"`
+	Object  string         `json:"object"`
+	Model   string         `json:"model"`
+	Choices []openAIChoice `json:"choices"`
+	Usage   *openAIUsage   `json:"usage,omitempty"`
 }
 
 // openAIChoice is a single completion choice.
 type openAIChoice struct {
-	Index        int            `json:"index"`
-	Message      openAIMessage  `json:"message"`
-	FinishReason string         `json:"finish_reason"`
+	Index        int           `json:"index"`
+	Message      openAIMessage `json:"message"`
+	FinishReason string        `json:"finish_reason"`
 }
 
 // openAIUsage holds token usage from an OpenAI response.
@@ -233,24 +233,24 @@ type openAIPromptDetails struct {
 
 // openAIChatStreamChunk is a single SSE chunk in a streaming response.
 type openAIChatStreamChunk struct {
-	ID      string              `json:"id"`
-	Object  string              `json:"object"`
-	Model   string              `json:"model"`
+	ID      string               `json:"id"`
+	Object  string               `json:"object"`
+	Model   string               `json:"model"`
 	Choices []openAIStreamChoice `json:"choices"`
-	Usage   *openAIUsage        `json:"usage,omitempty"`
+	Usage   *openAIUsage         `json:"usage,omitempty"`
 }
 
 // openAIStreamChoice is a choice delta in a streaming chunk.
 type openAIStreamChoice struct {
-	Index        int            `json:"index"`
-	Delta        openAIDelta    `json:"delta"`
-	FinishReason string         `json:"finish_reason"`
+	Index        int         `json:"index"`
+	Delta        openAIDelta `json:"delta"`
+	FinishReason string      `json:"finish_reason"`
 }
 
 // openAIDelta is the incremental content in a stream chunk.
 type openAIDelta struct {
-	Role      string               `json:"role,omitempty"`
-	Content   string               `json:"content,omitempty"`
+	Role      string                `json:"role,omitempty"`
+	Content   string                `json:"content,omitempty"`
 	ToolCalls []openAIToolCallDelta `json:"tool_calls,omitempty"`
 }
 
@@ -719,8 +719,8 @@ func translateChunkToAnthropicEvents(
 				"stop_reason":   nil,
 				"stop_sequence": nil,
 				"usage": map[string]any{
-					"input_tokens":           inputTokens,
-					"output_tokens":          0,
+					"input_tokens":            inputTokens,
+					"output_tokens":           0,
 					"cache_read_input_tokens": cacheRead,
 				},
 			},

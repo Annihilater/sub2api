@@ -21,19 +21,17 @@ import (
 //
 // This provider handles the exchange and caching of Copilot API tokens.
 type CopilotTokenProvider struct {
-	accountRepo AccountRepository
-	httpClient  *http.Client
+	httpClient *http.Client
 
 	mu     sync.RWMutex
 	tokens map[int64]*copilot.CopilotToken // accountID → cached token
 }
 
 // NewCopilotTokenProvider creates a new CopilotTokenProvider.
-func NewCopilotTokenProvider(accountRepo AccountRepository) *CopilotTokenProvider {
+func NewCopilotTokenProvider() *CopilotTokenProvider {
 	return &CopilotTokenProvider{
-		accountRepo: accountRepo,
-		httpClient:  &http.Client{Timeout: 30 * time.Second},
-		tokens:      make(map[int64]*copilot.CopilotToken),
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		tokens:     make(map[int64]*copilot.CopilotToken),
 	}
 }
 
