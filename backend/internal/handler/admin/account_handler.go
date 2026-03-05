@@ -56,6 +56,7 @@ type AccountHandler struct {
 	sessionLimitCache       service.SessionLimitCache
 	rpmCache                service.RPMCache
 	tokenCacheInvalidator   service.TokenCacheInvalidator
+	copilotGatewayService   *service.CopilotGatewayService
 }
 
 // NewAccountHandler creates a new admin account handler
@@ -73,6 +74,7 @@ func NewAccountHandler(
 	sessionLimitCache service.SessionLimitCache,
 	rpmCache service.RPMCache,
 	tokenCacheInvalidator service.TokenCacheInvalidator,
+	copilotGatewayService *service.CopilotGatewayService,
 ) *AccountHandler {
 	return &AccountHandler{
 		adminService:            adminService,
@@ -88,6 +90,7 @@ func NewAccountHandler(
 		sessionLimitCache:       sessionLimitCache,
 		rpmCache:                rpmCache,
 		tokenCacheInvalidator:   tokenCacheInvalidator,
+		copilotGatewayService:   copilotGatewayService,
 	}
 }
 
@@ -1644,6 +1647,40 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	}
 
 	response.Success(c, models)
+}
+
+// GetCopilotQuota handles fetching Copilot quota information for an account.
+// GET /api/v1/admin/accounts/:id/copilot-quota
+func (h *AccountHandler) GetCopilotQuota(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+
+	account, err := h.adminService.GetAccount(c.Request.Context(), accountID)
+	if err != nil {
+		response.NotFound(c, "Account not found")
+		return
+	}
+
+	if account.Platform != service.PlatformCopilot {
+		response.BadRequest(c, "Account is not a Copilot account")
+		return
+	}
+
+	if h.copilotGatewayService == nil {
+		response.InternalError(c, "Copilot gateway service not available")
+		return
+	}
+
+	quotaInfo, err := h.copilotGatewayService.FetchQuota(c.Request.Context(), account)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, quotaInfo)
 }
 
 // RefreshTier handles refreshing Google One tier for a single account
