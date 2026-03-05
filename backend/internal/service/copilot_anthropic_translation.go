@@ -260,17 +260,14 @@ type openAIDelta struct {
 
 // translateAnthropicToOpenAI converts an Anthropic /v1/messages request body to
 // an OpenAI /chat/completions request body suitable for the Copilot API.
-// modelMapping is an optional account-level model mapping (may be nil); when
-// a mapping entry is found for the requested model it takes priority over the
-// generic dash-to-dot conversion.
-func translateAnthropicToOpenAI(body []byte, modelMapping map[string]string) ([]byte, error) {
+func translateAnthropicToOpenAI(body []byte, _ map[string]string) ([]byte, error) {
 	var req AnthropicMessagesRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, fmt.Errorf("parse anthropic request: %w", err)
 	}
 
 	openAIReq := openAIChatRequest{
-		Model:       normalizeCopilotModel(req.Model, modelMapping),
+		Model:       req.Model,
 		Messages:    buildOpenAIMessages(req),
 		MaxTokens:   req.MaxTokens,
 		Stop:        req.StopSequences,
@@ -285,54 +282,6 @@ func translateAnthropicToOpenAI(body []byte, modelMapping map[string]string) ([]
 	}
 
 	return json.Marshal(openAIReq)
-}
-
-// normalizeCopilotModel maps Anthropic-style model names (dashes) to the exact
-// Copilot API model IDs (dots).
-//
-// Claude Code sends model names like "claude-sonnet-4-5" (dashes, as exposed
-// by our /v1/models endpoint). Copilot API expects "claude-sonnet-4.5" (dots).
-//
-// The optional modelMapping parameter provides account-level overrides. When a
-// mapping entry is found for the requested model, it takes priority over the
-// generic conversion.
-//
-// Examples (no mapping):
-//
-//	"claude-sonnet-4-5"          → "claude-sonnet-4.5"
-//	"claude-sonnet-4-5-20250929" → "claude-sonnet-4.5"
-//	"claude-opus-4-6"            → "claude-opus-4.6"
-//	"claude-haiku-4-5"           → "claude-haiku-4.5"
-//	"gpt-4o"                     → "gpt-4o"  (unchanged)
-func normalizeCopilotModel(model string, modelMapping map[string]string) string {
-	// Check account-level mapping first.
-	if len(modelMapping) > 0 {
-		if target, ok := modelMapping[model]; ok {
-			return target
-		}
-	}
-
-	// Fallback: generic dash-to-dot conversion for known Claude model prefixes.
-	prefixes := []string{
-		"claude-sonnet-4-",
-		"claude-opus-4-",
-		"claude-haiku-4-",
-		"claude-sonnet-3-",
-		"claude-opus-3-",
-		"claude-haiku-3-",
-	}
-
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(model, prefix) {
-			// Extract just the minor version number (e.g. "5" from "claude-sonnet-4-5-20250929")
-			rest := model[len(prefix):]
-			minor := strings.SplitN(rest, "-", 2)[0]
-			// Rebuild with dot: "claude-sonnet-4.5"
-			base := prefix[:len(prefix)-1] // strip trailing "-"
-			return base + "." + minor
-		}
-	}
-	return model
 }
 
 // buildOpenAIMessages converts the Anthropic messages array (plus optional system

@@ -1341,7 +1341,8 @@ func (s *AccountTestService) testCopilotAccountConnection(c *gin.Context, accoun
 	// normalizeCopilotModel handles both account-level mapping and the generic
 	// dash-to-dot conversion (e.g. "claude-sonnet-4-6" → "claude-sonnet-4.6")
 	// required by the Copilot API.
-	testModelID = normalizeCopilotModel(testModelID, account.GetModelMapping())
+	// No normalization needed: use the model name as-is since Copilot API
+	// accepts the model names returned by /models directly.
 
 	// Set SSE headers
 	c.Writer.Header().Set("Content-Type", "text/event-stream")

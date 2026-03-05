@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -36,93 +35,6 @@ func TestDetectStreamMode(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestCopilotGatewayService_ApplyModelMapping(t *testing.T) {
-	svc := &CopilotGatewayService{}
-
-	t.Run("no mapping configured", func(t *testing.T) {
-		account := &Account{
-			Platform:    PlatformCopilot,
-			Credentials: map[string]any{},
-		}
-		body := []byte(`{"model":"gpt-4o","messages":[]}`)
-
-		newBody, model := svc.applyModelMapping(body, account)
-		if model != "gpt-4o" {
-			t.Errorf("model = %q, want %q", model, "gpt-4o")
-		}
-		// Body should be unchanged
-		var req map[string]json.RawMessage
-		if err := json.Unmarshal(newBody, &req); err != nil {
-			t.Fatalf("failed to unmarshal body: %v", err)
-		}
-		var m string
-		if err := json.Unmarshal(req["model"], &m); err != nil {
-			t.Fatalf("failed to unmarshal model: %v", err)
-		}
-		if m != "gpt-4o" {
-			t.Errorf("body model = %q, want %q", m, "gpt-4o")
-		}
-	})
-
-	t.Run("with mapping", func(t *testing.T) {
-		account := &Account{
-			Platform: PlatformCopilot,
-			Credentials: map[string]any{
-				"model_mapping": map[string]any{
-					"gpt-4": "gpt-4o",
-				},
-			},
-		}
-		body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}`)
-
-		newBody, model := svc.applyModelMapping(body, account)
-		if model != "gpt-4" {
-			t.Errorf("model = %q, want %q (original)", model, "gpt-4")
-		}
-		// Body should have mapped model
-		var req map[string]json.RawMessage
-		if err := json.Unmarshal(newBody, &req); err != nil {
-			t.Fatalf("failed to unmarshal body: %v", err)
-		}
-		var m string
-		if err := json.Unmarshal(req["model"], &m); err != nil {
-			t.Fatalf("failed to unmarshal model: %v", err)
-		}
-		if m != "gpt-4o" {
-			t.Errorf("body model = %q, want %q", m, "gpt-4o")
-		}
-	})
-
-	t.Run("empty model", func(t *testing.T) {
-		account := &Account{
-			Platform:    PlatformCopilot,
-			Credentials: map[string]any{},
-		}
-		body := []byte(`{"messages":[]}`)
-
-		_, model := svc.applyModelMapping(body, account)
-		if model != "" {
-			t.Errorf("model = %q, want empty", model)
-		}
-	})
-
-	t.Run("invalid json", func(t *testing.T) {
-		account := &Account{
-			Platform:    PlatformCopilot,
-			Credentials: map[string]any{},
-		}
-		body := []byte(`{invalid}`)
-
-		retBody, model := svc.applyModelMapping(body, account)
-		if model != "" {
-			t.Errorf("model = %q, want empty", model)
-		}
-		if string(retBody) != string(body) {
-			t.Errorf("body should be unchanged for invalid json")
-		}
-	})
 }
 
 func TestCopilotGatewayService_ParseStreamUsage(t *testing.T) {
