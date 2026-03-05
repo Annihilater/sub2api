@@ -1,12 +1,13 @@
 package handler
 
 import (
-	"log/slog"
+	"context"
 	"net/http"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -193,19 +194,39 @@ func (h *CopilotGatewayHandler) ChatCompletions(c *gin.Context) {
 			return
 		}
 
-		// Log usage (structured log for now — full billing integration can be added later)
+		// Record usage to database.
 		if result != nil && result.Usage != nil {
-			slog.Info("copilot.usage",
-				"account_id", account.ID,
-				"user_id", subject.UserID,
-				"api_key_id", apiKey.ID,
-				"model", result.Model,
-				"prompt_tokens", result.Usage.PromptTokens,
-				"completion_tokens", result.Usage.CompletionTokens,
-				"total_tokens", result.Usage.TotalTokens)
+			userAgent := c.GetHeader("User-Agent")
+			clientIP := ip.GetClientIP(c)
+			capturedResult := result
+			capturedAccount := account
+			go func() {
+				recordCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				fwdResult := &service.ForwardResult{
+					Model:  capturedResult.Model,
+					Stream: reqStream,
+					Usage: service.ClaudeUsage{
+						InputTokens:  capturedResult.Usage.PromptTokens,
+						OutputTokens: capturedResult.Usage.CompletionTokens,
+					},
+				}
+				if err := h.gatewayService.RecordUsage(recordCtx, &service.RecordUsageInput{
+					Result:        fwdResult,
+					APIKey:        apiKey,
+					User:          apiKey.User,
+					Account:       capturedAccount,
+					Subscription:  subscription,
+					UserAgent:     userAgent,
+					IPAddress:     clientIP,
+					APIKeyService: nil,
+				}); err != nil {
+					reqLog.Error("copilot.record_usage_failed", zap.Error(err))
+				}
+			}()
 		}
 
-		reqLog.Debug("copilot.request_completed",
+		reqLog.Debug("copilot.messages.completed",
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount))
 		return
@@ -412,15 +433,36 @@ func (h *CopilotGatewayHandler) Messages(c *gin.Context) {
 			return
 		}
 
+		// Record usage to database.
 		if result != nil && result.Usage != nil {
-			slog.Info("copilot.messages.usage",
-				"account_id", account.ID,
-				"user_id", subject.UserID,
-				"api_key_id", apiKey.ID,
-				"model", result.Model,
-				"prompt_tokens", result.Usage.PromptTokens,
-				"completion_tokens", result.Usage.CompletionTokens,
-				"total_tokens", result.Usage.TotalTokens)
+			userAgent := c.GetHeader("User-Agent")
+			clientIP := ip.GetClientIP(c)
+			capturedResult := result
+			capturedAccount := account
+			go func() {
+				recordCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				fwdResult := &service.ForwardResult{
+					Model:  capturedResult.Model,
+					Stream: reqStream,
+					Usage: service.ClaudeUsage{
+						InputTokens:  capturedResult.Usage.PromptTokens,
+						OutputTokens: capturedResult.Usage.CompletionTokens,
+					},
+				}
+				if err := h.gatewayService.RecordUsage(recordCtx, &service.RecordUsageInput{
+					Result:        fwdResult,
+					APIKey:        apiKey,
+					User:          apiKey.User,
+					Account:       capturedAccount,
+					Subscription:  subscription,
+					UserAgent:     userAgent,
+					IPAddress:     clientIP,
+					APIKeyService: nil,
+				}); err != nil {
+					reqLog.Error("copilot.messages.record_usage_failed", zap.Error(err))
+				}
+			}()
 		}
 
 		reqLog.Debug("copilot.messages.completed",
