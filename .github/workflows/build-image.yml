@@ -81,9 +81,10 @@ jobs:
             echo "platforms=linux/amd64" >> $GITHUB_OUTPUT
             echo "⚡ Fast mode: amd64 only"
           else
-            # 全平台：x86_64 服务器 + ARM64 (Apple M1/M2/树莓派4/Oracle ARM) + ARMv7 (树莓派3)
-            echo "platforms=linux/amd64,linux/arm64,linux/arm/v7" >> $GITHUB_OUTPUT
-            echo "🌍 Full mode: amd64 + arm64 + arm/v7"
+            # 全平台：x86_64 服务器 + ARM64 (Apple M1/M2/树莓派4/Oracle ARM 免费机)
+            # 注：node:24-alpine 不提供 arm/v7 镜像，无法支持该平台
+            echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT
+            echo "🌍 Full mode: amd64 + arm64"
           fi
 
       # ------------------------------------------------------------------
