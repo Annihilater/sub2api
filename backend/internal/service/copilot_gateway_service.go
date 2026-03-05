@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,10 +40,22 @@ type CopilotGatewayService struct {
 func NewCopilotGatewayService(
 	tokenProvider *CopilotTokenProvider,
 ) *CopilotGatewayService {
+	// Use a dedicated transport with HTTP/2 disabled.
+	// The Copilot API occasionally returns 421 Misdirected Request when an
+	// HTTP/2 connection is reused across different account tokens; disabling
+	// HTTP/2 forces a fresh TCP+TLS connection per request, which avoids this.
+	transport := &http.Transport{
+		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
+		ForceAttemptHTTP2:   false,
+		DisableKeepAlives:   false,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+	}
 	return &CopilotGatewayService{
 		tokenProvider: tokenProvider,
 		httpClient: &http.Client{
-			Timeout: 5 * time.Minute, // long timeout for streaming
+			Timeout:   5 * time.Minute, // long timeout for streaming
+			Transport: transport,
 		},
 	}
 }
