@@ -33,10 +33,40 @@ func (t *CopilotToken) ShouldRefresh() bool {
 	return time.Now().After(t.RefreshAt)
 }
 
-// CopilotAPIBase is the default base URL for the Copilot API (individual accounts).
-// Individual accounts use api.githubcopilot.com (no subdomain prefix).
-// Business/enterprise accounts use api.business.githubcopilot.com etc.
+// CopilotAPIBase is the canonical Copilot API base URL.
+// This endpoint supports ALL API paths including /responses, /chat/completions, and /models.
 const CopilotAPIBase = "https://api.githubcopilot.com"
+
+// Plan-specific base URLs used for /chat/completions routing.
+// Note: these subdomain variants do NOT support /responses — use CopilotAPIBase for that.
+const (
+	CopilotAPIBaseIndividual = "https://api.individual.githubcopilot.com"
+	CopilotAPIBaseBusiness   = "https://api.business.githubcopilot.com"
+	CopilotAPIBaseEnterprise = "https://api.enterprise.githubcopilot.com"
+)
+
+// PlanType constants for GitHub Copilot account plans.
+const (
+	PlanTypeIndividual = "individual"
+	PlanTypeBusiness   = "business"
+	PlanTypeEnterprise = "enterprise"
+)
+
+// ChatBaseURLForPlan returns the appropriate /chat/completions base URL for the
+// given plan_type credential value.  If plan_type is empty or unrecognised, the
+// canonical CopilotAPIBase is used (works for all plan types).
+func ChatBaseURLForPlan(planType string) string {
+	switch planType {
+	case PlanTypeIndividual:
+		return CopilotAPIBaseIndividual
+	case PlanTypeBusiness:
+		return CopilotAPIBaseBusiness
+	case PlanTypeEnterprise:
+		return CopilotAPIBaseEnterprise
+	default:
+		return CopilotAPIBase
+	}
+}
 
 // TokenExchangeURL is the GitHub endpoint for exchanging a GitHub token for a Copilot token.
 const TokenExchangeURL = "https://api.github.com/copilot_internal/v2/token"
