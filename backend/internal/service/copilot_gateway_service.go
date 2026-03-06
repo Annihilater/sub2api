@@ -54,7 +54,7 @@ func NewCopilotGatewayService(
 		},
 		ForceAttemptHTTP2:   false,
 		DisableKeepAlives:   false,
-		MaxIdleConnsPerHost: 10,
+		MaxIdleConnsPerHost: 50,
 		IdleConnTimeout:     90 * time.Second,
 	}
 	return &CopilotGatewayService{
@@ -192,21 +192,39 @@ func (s *CopilotGatewayService) handleStreamingResponse(
 	scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
 
 	var firstTokenMs *int
+	streamDone := false
 
 	for scanner.Scan() {
+		// Abort early if the client disconnected.
+		if err := c.Request.Context().Err(); err != nil {
+			slog.Debug("copilot stream: client disconnected", "error", err)
+			return &CopilotForwardResult{
+				StatusCode:   http.StatusOK,
+				Model:        model,
+				Usage:        usage,
+				Duration:     time.Since(startTime),
+				FirstTokenMs: firstTokenMs,
+			}, nil
+		}
+
 		line := scanner.Text()
 
 		// Parse usage from SSE data
 		if strings.HasPrefix(line, "data: ") {
 			data := line[6:]
-			if data != "[DONE]" {
-				// Record first token time on first data chunk
-				if firstTokenMs == nil {
-					ms := int(time.Since(startTime).Milliseconds())
-					firstTokenMs = &ms
-				}
-				s.parseStreamUsage(data, usage)
+			if data == "[DONE]" {
+				streamDone = true
+				// Forward [DONE] to the client, then stop reading.
+				fmt.Fprintf(c.Writer, "%s\n", line)
+				flusher.Flush()
+				break
 			}
+			// Record first token time on first data chunk
+			if firstTokenMs == nil {
+				ms := int(time.Since(startTime).Milliseconds())
+				firstTokenMs = &ms
+			}
+			s.parseStreamUsage(data, usage)
 		}
 
 		// Forward line to client
@@ -214,8 +232,14 @@ func (s *CopilotGatewayService) handleStreamingResponse(
 		flusher.Flush()
 	}
 
-	if err := scanner.Err(); err != nil {
-		slog.Warn("copilot stream scanner error", "error", err)
+	// Only treat scanner errors as failures when we never saw [DONE].
+	// After a clean [DONE] the server closes the connection, which makes
+	// scanner.Err() return an unexpected EOF even though the stream finished
+	// successfully.
+	if !streamDone {
+		if err := scanner.Err(); err != nil {
+			slog.Warn("copilot stream scanner error", "error", err)
+		}
 	}
 
 	return &CopilotForwardResult{
@@ -244,9 +268,11 @@ func (s *CopilotGatewayService) handleNonStreamingResponse(
 	// Extract usage
 	usage := s.parseNonStreamUsage(body)
 
-	// Forward response headers
-	for k, vals := range resp.Header {
-		for _, v := range vals {
+	// Forward only safe, client-relevant headers (whitelist).
+	// Forwarding all upstream headers would leak internal routing details
+	// (X-Request-Id, X-Ratelimit-*, X-GitHub-*, etc.) to external clients.
+	for _, k := range []string{"Content-Type", "Content-Length"} {
+		if v := resp.Header.Get(k); v != "" {
 			c.Header(k, v)
 		}
 	}
@@ -287,7 +313,9 @@ func (s *CopilotGatewayService) handleErrorResponse(
 		// Token may have expired, invalidate cache
 		s.tokenProvider.InvalidateToken(account.ID)
 	case http.StatusTooManyRequests:
-		// Rate limited — caller should handle retry/failover
+		// Rate limited — do NOT write to client; return the status code so
+		// the handler loop can failover to another account.
+		return &CopilotForwardResult{StatusCode: resp.StatusCode}, nil
 	case http.StatusMisdirectedRequest:
 		// 421 is a connection-level error (HTTP/2 connection reused across
 		// different Bearer tokens / virtual hosts).  Flush idle connections so
@@ -750,8 +778,21 @@ func (s *CopilotGatewayService) handleMessagesStreamingResponse(
 	scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
 
 	var firstTokenMs *int
+	streamDone := false
 
 	for scanner.Scan() {
+		// Abort early if the client disconnected.
+		if err := c.Request.Context().Err(); err != nil {
+			slog.Debug("copilot messages stream: client disconnected", "error", err)
+			return &CopilotForwardResult{
+				StatusCode:   http.StatusOK,
+				Model:        model,
+				Usage:        usage,
+				Duration:     time.Since(startTime),
+				FirstTokenMs: firstTokenMs,
+			}, nil
+		}
+
 		line := scanner.Text()
 
 		if !strings.HasPrefix(line, "data: ") {
@@ -764,6 +805,7 @@ func (s *CopilotGatewayService) handleMessagesStreamingResponse(
 		data := line[6:]
 		if data == "[DONE]" {
 			// Anthropic clients don't expect [DONE]; just stop.
+			streamDone = true
 			break
 		}
 
@@ -794,14 +836,21 @@ func (s *CopilotGatewayService) handleMessagesStreamingResponse(
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		slog.Warn("copilot messages stream scanner error", "error", err)
-		// Send an Anthropic error event instead of synthesizing fake termination
-		// events. The Anthropic SDK treats event: error as a terminal failure and
-		// throws APIError, allowing Claude Code to detect the interruption and
-		// retry automatically instead of getting stuck on incomplete tool JSON.
-		s.emitStreamErrorEvent(c.Writer, flusher, "overloaded_error",
-			"Upstream connection interrupted, please retry.")
+	// Only treat scanner errors as failures when we never saw [DONE].
+	// After a clean [DONE] the server closes the connection, which makes
+	// scanner.Err() return an unexpected EOF even though the stream finished
+	// successfully.  Emitting a spurious error event on a completed stream
+	// would cause Claude Code to throw APIError on an otherwise-clean response.
+	if !streamDone {
+		if err := scanner.Err(); err != nil {
+			slog.Warn("copilot messages stream scanner error", "error", err)
+			// Send an Anthropic error event instead of synthesizing fake termination
+			// events. The Anthropic SDK treats event: error as a terminal failure and
+			// throws APIError, allowing Claude Code to detect the interruption and
+			// retry automatically instead of getting stuck on incomplete tool JSON.
+			s.emitStreamErrorEvent(c.Writer, flusher, "overloaded_error",
+				"Upstream connection interrupted, please retry.")
+		}
 	}
 
 	return &CopilotForwardResult{
