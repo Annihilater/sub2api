@@ -796,12 +796,12 @@ func (s *CopilotGatewayService) handleMessagesStreamingResponse(
 
 	if err := scanner.Err(); err != nil {
 		slog.Warn("copilot messages stream scanner error", "error", err)
-		// The upstream connection was interrupted (e.g. unexpected EOF).
-		// The client already received partial SSE events but never got the
-		// required termination sequence.  Emit the missing closing events
-		// so the Anthropic client (Claude Code) knows the stream is done
-		// and doesn't hang waiting forever.
-		s.emitStreamTerminationEvents(c.Writer, flusher, state, usage)
+		// Send an Anthropic error event instead of synthesizing fake termination
+		// events. The Anthropic SDK treats event: error as a terminal failure and
+		// throws APIError, allowing Claude Code to detect the interruption and
+		// retry automatically instead of getting stuck on incomplete tool JSON.
+		s.emitStreamErrorEvent(c.Writer, flusher, "overloaded_error",
+			"Upstream connection interrupted, please retry.")
 	}
 
 	return &CopilotForwardResult{
@@ -854,6 +854,24 @@ func (s *CopilotGatewayService) emitStreamTerminationEvents(
 	// 3. Send message_stop to signal the stream is complete.
 	msgStop, _ := json.Marshal(map[string]string{"type": "message_stop"})
 	fmt.Fprintf(w, "event: message_stop\ndata: %s\n\n", string(msgStop))
+	flusher.Flush()
+}
+
+// emitStreamErrorEvent sends an Anthropic error SSE event to the client.
+// The Anthropic SDK interprets event: error as a terminal error and throws
+// an APIError, allowing Claude Code to detect the failure and retry.
+func (s *CopilotGatewayService) emitStreamErrorEvent(
+	w io.Writer, flusher http.Flusher,
+	errType string, message string,
+) {
+	errEvt, _ := json.Marshal(map[string]any{
+		"type": "error",
+		"error": map[string]any{
+			"type":    errType,
+			"message": message,
+		},
+	})
+	fmt.Fprintf(w, "event: error\ndata: %s\n\n", string(errEvt))
 	flusher.Flush()
 }
 
@@ -952,6 +970,22 @@ func (s *CopilotGatewayService) handleMessagesStreamToNonStreamingResponse(
 
 	if err := scanner.Err(); err != nil {
 		slog.Warn("copilot messages stream-to-nonstream scanner error", "error", err)
+		// Return an Anthropic-format 529 error instead of assembling a response
+		// from incomplete data. Claude Code has built-in backoff retry logic for
+		// overloaded_error (HTTP 529), so the user experience is seamless.
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"type": "error",
+			"error": gin.H{
+				"type":    "overloaded_error",
+				"message": "Upstream connection interrupted, please retry.",
+			},
+		})
+		return &CopilotForwardResult{
+			StatusCode:   http.StatusTooManyRequests,
+			Model:        model,
+			Duration:     time.Since(startTime),
+			FirstTokenMs: firstTokenMs,
+		}, nil
 	}
 
 	// Build the reconstructed OpenAI non-streaming response.

@@ -3155,6 +3155,10 @@ export default {
       errorDetails: {
         upstreamErrors: 'Upstream Errors',
         requestErrors: 'Request Errors',
+        detailPaneTitle: 'Error Detail',
+        detailPaneHint: 'Press Esc to close the detail pane',
+        detailPaneEmpty: 'Select an error from the left list to inspect it',
+        closeDetail: 'Close Detail',
         unresolved: 'Unresolved',
         resolved: 'Resolved',
         viewErrors: 'Errors',

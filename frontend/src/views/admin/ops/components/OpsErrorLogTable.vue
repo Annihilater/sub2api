@@ -50,7 +50,10 @@
             <tr
               v-for="log in rows"
               :key="log.id"
-              class="group cursor-pointer transition-colors hover:bg-gray-50/80 dark:hover:bg-dark-800/50"
+              :class="[
+                'group cursor-pointer transition-colors hover:bg-gray-50/80 dark:hover:bg-dark-800/50',
+                selectedId === log.id ? 'bg-primary-50/70 dark:bg-primary-900/10' : ''
+              ]"
               @click="emit('openErrorDetail', log.id)"
             >
               <!-- Time -->
@@ -223,6 +226,7 @@ interface Props {
   loading: boolean
   page: number
   pageSize: number
+  selectedId?: number | null
 }
 
 interface Emits {

@@ -3325,6 +3325,10 @@ export default {
       errorDetails: {
         upstreamErrors: '上游错误',
         requestErrors: '请求错误',
+        detailPaneTitle: '错误详情',
+        detailPaneHint: '按 Esc 可关闭右侧详情面板',
+        detailPaneEmpty: '请从左侧选择一条错误查看详情',
+        closeDetail: '关闭详情',
         unresolved: '未解决',
         resolved: '已解决',
         viewErrors: '错误',
