@@ -904,6 +904,7 @@ func (s *CopilotGatewayService) handleMessagesStreamToNonStreamingResponse(
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
 
+	doneSeen := false
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
@@ -911,6 +912,7 @@ func (s *CopilotGatewayService) handleMessagesStreamToNonStreamingResponse(
 		}
 		data := line[6:]
 		if data == "[DONE]" {
+			doneSeen = true
 			break
 		}
 
@@ -968,12 +970,19 @@ func (s *CopilotGatewayService) handleMessagesStreamToNonStreamingResponse(
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		slog.Warn("copilot messages stream-to-nonstream scanner error", "error", err)
+	// Only treat scanner errors as failures when we never saw [DONE].
+	// After a clean [DONE] the server closes the connection, which causes the
+	// scanner's underlying reader to return io.EOF — that manifests as
+	// scanner.Err() == "unexpected EOF" even though the stream was fully
+	// consumed.  We must not treat that as an error.
+	if !doneSeen {
+		if err := scanner.Err(); err != nil {
+			slog.Warn("copilot messages stream-to-nonstream scanner error", "error", err)
+		}
 		// Return an Anthropic-format 529 error instead of assembling a response
 		// from incomplete data. Claude Code has built-in backoff retry logic for
 		// overloaded_error (HTTP 529), so the user experience is seamless.
-		c.JSON(http.StatusTooManyRequests, gin.H{
+		c.JSON(529, gin.H{
 			"type": "error",
 			"error": gin.H{
 				"type":    "overloaded_error",
@@ -981,7 +990,7 @@ func (s *CopilotGatewayService) handleMessagesStreamToNonStreamingResponse(
 			},
 		})
 		return &CopilotForwardResult{
-			StatusCode:   http.StatusTooManyRequests,
+			StatusCode:   529,
 			Model:        model,
 			Duration:     time.Since(startTime),
 			FirstTokenMs: firstTokenMs,
