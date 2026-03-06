@@ -260,8 +260,10 @@ type openAIDelta struct {
 
 // translateAnthropicToOpenAI converts an Anthropic /v1/messages request body to
 // an OpenAI /chat/completions request body suitable for the Copilot API.
-// The model name is passed through as-is; callers must use the exact model ID
-// returned by the Copilot /models endpoint (e.g. "claude-sonnet-4.6").
+//
+// The model name is passed through exactly as provided by the client.
+// The Copilot API returns model IDs with version suffixes (e.g. "claude-sonnet-4.6"),
+// so clients should use the exact ID from the /models endpoint.
 func translateAnthropicToOpenAI(body []byte, _ map[string]string) ([]byte, error) {
 	var req AnthropicMessagesRequest
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -312,7 +314,122 @@ func buildOpenAIMessages(req AnthropicMessagesRequest) []openAIMessage {
 		}
 	}
 
-	return msgs
+	return sanitizeOpenAIMessages(msgs)
+}
+
+// sanitizeOpenAIMessages normalizes translated messages to satisfy Copilot API
+// constraints that are stricter than the Anthropic protocol:
+//
+//  1. Every assistant tool_call must have a matching tool-role response.
+//     Claude Code sometimes sends an empty user acknowledgement instead of a
+//     tool_result (e.g. after ToolSearch deferred-tool lookup), which leaves
+//     the tool_call "orphaned" in OpenAI format.  We inject a synthetic tool
+//     response so the Copilot API accepts the conversation.
+//
+//  2. Consecutive same-role messages (user/user, system/system) are merged
+//     because the Copilot API may reject them.
+//
+//  3. Empty user messages (content == "") that sit between two assistant
+//     messages are removed when they serve no purpose.
+func sanitizeOpenAIMessages(msgs []openAIMessage) []openAIMessage {
+	// ── Step 1: inject synthetic tool responses for orphan tool_calls ────
+
+	// Collect all tool_call IDs that already have a tool response.
+	answered := make(map[string]struct{})
+	for _, m := range msgs {
+		if m.Role == "tool" && m.ToolCallID != "" {
+			answered[m.ToolCallID] = struct{}{}
+		}
+	}
+
+	// Walk messages; after each assistant with unanswered tool_calls, insert
+	// synthetic tool responses immediately following that assistant message.
+	var patched []openAIMessage
+	for _, m := range msgs {
+		patched = append(patched, m)
+		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
+			for _, tc := range m.ToolCalls {
+				if _, ok := answered[tc.ID]; !ok {
+					patched = append(patched, openAIMessage{
+						Role:       "tool",
+						ToolCallID: tc.ID,
+						Content:    "",
+					})
+					answered[tc.ID] = struct{}{}
+				}
+			}
+		}
+	}
+
+	// ── Step 2: remove empty user messages that are now unnecessary ──────
+	// An empty user message between two non-user messages serves no purpose
+	// and can cause "consecutive same-role" issues once we injected synthetic
+	// tool responses above.
+	var cleaned []openAIMessage
+	for i, m := range patched {
+		if m.Role == "user" {
+			if s, ok := m.Content.(string); ok && s == "" {
+				// Keep if it is the only message, or the last message
+				if len(patched) > 1 && i < len(patched)-1 {
+					continue
+				}
+			}
+		}
+		cleaned = append(cleaned, m)
+	}
+
+	// ── Step 3: merge consecutive user/system messages ───────────────────
+	if len(cleaned) == 0 {
+		return cleaned
+	}
+	result := make([]openAIMessage, 0, len(cleaned))
+	result = append(result, cleaned[0])
+
+	for i := 1; i < len(cleaned); i++ {
+		cur := cleaned[i]
+		prev := &result[len(result)-1]
+
+		canMerge := cur.Role == prev.Role &&
+			(cur.Role == "user" || cur.Role == "system") &&
+			len(cur.ToolCalls) == 0 &&
+			len(prev.ToolCalls) == 0
+
+		if !canMerge {
+			result = append(result, cur)
+			continue
+		}
+
+		prevText := contentToString(prev.Content)
+		curText := contentToString(cur.Content)
+		merged := prevText
+		if curText != "" {
+			if merged != "" {
+				merged += "\n\n"
+			}
+			merged += curText
+		}
+		prev.Content = merged
+	}
+
+	return result
+}
+
+// contentToString extracts a plain string from an openAIMessage Content value.
+func contentToString(content any) string {
+	switch v := content.(type) {
+	case string:
+		return v
+	case []openAIContentPart:
+		var parts []string
+		for _, p := range v {
+			if p.Type == "text" && p.Text != "" {
+				parts = append(parts, p.Text)
+			}
+		}
+		return strings.Join(parts, "\n\n")
+	default:
+		return ""
+	}
 }
 
 // extractSystemText parses the Anthropic system field, which can be either a
@@ -355,7 +472,12 @@ func handleAnthropicUserMessage(m AnthropicMessage) []openAIMessage {
 	}
 
 	var toolResults []openAIMessage
-	var otherParts []openAIContentPart
+	// hasImage tracks whether any image block is present in non-tool_result blocks.
+	// When true we must use content-parts array; when false we join text/thinking as a plain string.
+	// This matches TypeScript mapContent() semantics exactly.
+	var hasImage bool
+	var textParts []string          // text + thinking joined when no image
+	var imageParts []openAIContentPart // full content-parts when image present
 
 	for _, raw := range blocks {
 		var typed struct {
@@ -377,16 +499,23 @@ func handleAnthropicUserMessage(m AnthropicMessage) []openAIMessage {
 			}
 		case "text":
 			var tb AnthropicTextBlock
-			if err := json.Unmarshal(raw, &tb); err == nil && tb.Text != "" {
-				otherParts = append(otherParts, openAIContentPart{
-					Type: "text",
-					Text: tb.Text,
-				})
+			if err := json.Unmarshal(raw, &tb); err == nil {
+				textParts = append(textParts, tb.Text)
+				imageParts = append(imageParts, openAIContentPart{Type: "text", Text: tb.Text})
+			}
+		case "thinking":
+			// thinking blocks in user messages are rare but handled for completeness,
+			// matching TypeScript mapContent() which includes block.type === "thinking".
+			var thk AnthropicThinkingBlock
+			if err := json.Unmarshal(raw, &thk); err == nil {
+				textParts = append(textParts, thk.Thinking)
+				imageParts = append(imageParts, openAIContentPart{Type: "text", Text: thk.Thinking})
 			}
 		case "image":
+			hasImage = true
 			var ib AnthropicImageBlock
 			if err := json.Unmarshal(raw, &ib); err == nil {
-				otherParts = append(otherParts, openAIContentPart{
+				imageParts = append(imageParts, openAIContentPart{
 					Type: "image_url",
 					ImageURL: &openAIImageURLObject{
 						URL: fmt.Sprintf("data:%s;base64,%s", ib.Source.MediaType, ib.Source.Data),
@@ -400,12 +529,16 @@ func handleAnthropicUserMessage(m AnthropicMessage) []openAIMessage {
 	var result []openAIMessage
 	result = append(result, toolResults...)
 
-	if len(otherParts) > 0 {
-		if len(otherParts) == 1 && otherParts[0].Type == "text" {
-			result = append(result, openAIMessage{Role: "user", Content: otherParts[0].Text})
+	if len(textParts) > 0 || hasImage {
+		var userContent any
+		if hasImage {
+			// Image present: use content-parts array (TypeScript path with hasImage=true)
+			userContent = imageParts
 		} else {
-			result = append(result, openAIMessage{Role: "user", Content: otherParts})
+			// No image: join text+thinking as a plain string (TypeScript mapContent no-image path)
+			userContent = strings.Join(textParts, "\n\n")
 		}
+		result = append(result, openAIMessage{Role: "user", Content: userContent})
 	}
 
 	if len(result) == 0 {
