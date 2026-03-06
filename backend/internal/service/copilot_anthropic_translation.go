@@ -476,7 +476,7 @@ func handleAnthropicUserMessage(m AnthropicMessage) []openAIMessage {
 	// When true we must use content-parts array; when false we join text/thinking as a plain string.
 	// This matches TypeScript mapContent() semantics exactly.
 	var hasImage bool
-	var textParts []string          // text + thinking joined when no image
+	var textParts []string             // text + thinking joined when no image
 	var imageParts []openAIContentPart // full content-parts when image present
 
 	for _, raw := range blocks {

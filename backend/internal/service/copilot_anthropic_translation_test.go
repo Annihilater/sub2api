@@ -32,7 +32,11 @@ func messagesFrom(t *testing.T, m map[string]any) []map[string]any {
 	}
 	result := make([]map[string]any, len(arr))
 	for i, v := range arr {
-		result[i] = v.(map[string]any)
+		m, ok := v.(map[string]any)
+		if !ok {
+			t.Fatalf("messages[%d] is not map[string]any: %T", i, v)
+		}
+		result[i] = m
 	}
 	return result
 }
@@ -174,7 +178,14 @@ func TestTranslateAnthropicToOpenAI_AlternatingRolesNotMerged(t *testing.T) {
 	if len(msgs) != 3 {
 		t.Fatalf("expected 3 messages, got %d", len(msgs))
 	}
-	roles := []string{msgs[0]["role"].(string), msgs[1]["role"].(string), msgs[2]["role"].(string)}
+	roles := make([]string, 3)
+	for i := range roles {
+		r, ok := msgs[i]["role"].(string)
+		if !ok {
+			t.Fatalf("msg[%d].role is not string: %T", i, msgs[i]["role"])
+		}
+		roles[i] = r
+	}
 	want := []string{"user", "assistant", "user"}
 	for i, r := range roles {
 		if r != want[i] {
@@ -182,7 +193,6 @@ func TestTranslateAnthropicToOpenAI_AlternatingRolesNotMerged(t *testing.T) {
 		}
 	}
 }
-
 
 func TestTranslateAnthropicToOpenAI_UserMessage_PlainString(t *testing.T) {
 	body := `{"model":"claude-sonnet-4","messages":[{"role":"user","content":"hello"}],"max_tokens":10}`
@@ -354,8 +364,8 @@ func TestTranslateAnthropicToOpenAI_Sanitize_RealWorld400Pattern(t *testing.T) {
 
 	// Verify: no consecutive same-role messages (tool-tool after same assistant is OK per OpenAI spec)
 	for i := 1; i < len(msgs); i++ {
-		r1 := msgs[i-1]["role"].(string)
-		r2 := msgs[i]["role"].(string)
+		r1, _ := msgs[i-1]["role"].(string)
+		r2, _ := msgs[i]["role"].(string)
 		if r1 == r2 && r1 != "tool" { // consecutive tool msgs are valid (multi-tool_call responses)
 			t.Errorf("consecutive same-role at [%d]-[%d]: both %q", i-1, i, r1)
 		}
@@ -376,8 +386,10 @@ func TestTranslateAnthropicToOpenAI_Sanitize_RealWorld400Pattern(t *testing.T) {
 	for _, m := range msgs {
 		if tcs, ok := m["tool_calls"].([]any); ok {
 			for _, tc := range tcs {
-				callMap := tc.(map[string]any)
-				allToolCalls[callMap["id"].(string)] = true
+				callMap, _ := tc.(map[string]any)
+				if id, ok := callMap["id"].(string); ok {
+					allToolCalls[id] = true
+				}
 			}
 		}
 		if m["role"] == "tool" {
@@ -400,7 +412,7 @@ func TestTranslateAnthropicToOpenAI_Sanitize_RealWorld400Pattern(t *testing.T) {
 	// Debug: print message structure
 	t.Logf("sanitized message count: %d", len(msgs))
 	for i, m := range msgs {
-		role := m["role"].(string)
+		role, _ := m["role"].(string)
 		hasTC := m["tool_calls"] != nil
 		hasTCID := m["tool_call_id"] != nil
 		t.Logf("  [%d] role=%s has_tool_calls=%v has_tool_call_id=%v", i, role, hasTC, hasTCID)
