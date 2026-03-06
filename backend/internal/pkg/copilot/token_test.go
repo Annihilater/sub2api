@@ -43,7 +43,7 @@ func TestExchangeToken_Success(t *testing.T) {
 	req.Header.Set("User-Agent", DefaultUserAgent)
 	req.Header.Set("x-github-api-version", DefaultGitHubAPIVersion)
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // test server URL
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestExchangeToken_HTTPError(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, server.URL, nil)
 	req.Header.Set("Authorization", "token bad-token")
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // test server URL
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

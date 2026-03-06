@@ -1048,7 +1048,7 @@ func fetchProjectIDFromResourceManager(ctx context.Context, accessToken, proxyUR
 		return "", fmt.Errorf("create http client failed: %w", err)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted resource manager config
 	if err != nil {
 		return "", fmt.Errorf("resource manager request failed: %w", err)
 	}

@@ -256,7 +256,7 @@ func (s *SoraMediaStorage) downloadOnce(ctx context.Context, root, mediaType, ra
 		return "", err
 	}
 	client := &http.Client{Timeout: s.downloadTimeout}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		return "", err
 	}

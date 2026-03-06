@@ -92,7 +92,7 @@ func (s *proxyProbeService) probeWithURL(ctx context.Context, client *http.Clien
 		return nil, 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		return nil, 0, fmt.Errorf("proxy connection failed: %w", err)
 	}

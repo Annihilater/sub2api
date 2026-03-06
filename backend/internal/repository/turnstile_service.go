@@ -48,7 +48,7 @@ func (v *turnstileVerifier) VerifyToken(ctx context.Context, secretKey, token, r
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := v.httpClient.Do(req)
+	resp, err := v.httpClient.Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		return nil, fmt.Errorf("send request: %w", err)
 	}

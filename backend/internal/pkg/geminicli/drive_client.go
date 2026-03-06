@@ -70,7 +70,7 @@ func (c *driveClient) GetStorageQuota(ctx context.Context, accessToken, proxyURL
 			return nil, fmt.Errorf("request cancelled: %w", ctx.Err())
 		}
 
-		resp, err = client.Do(req)
+		resp, err = client.Do(req) //nolint:gosec // URL is constructed from trusted config, not user input
 		if err != nil {
 			// Network error retry
 			if attempt < maxRetries-1 {

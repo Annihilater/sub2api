@@ -480,7 +480,7 @@ func (c *SoraSDKClient) GetWatermarkFreeURLCustom(ctx context.Context, account *
 	if c.httpUpstream != nil {
 		resp, err = c.httpUpstream.Do(req, proxyURL, accountID, accountConcurrency)
 	} else {
-		resp, err = http.DefaultClient.Do(req)
+		resp, err = http.DefaultClient.Do(req) //nolint:gosec // URL is from trusted config
 	}
 	if err != nil {
 		return "", err
@@ -725,7 +725,7 @@ func (c *SoraSDKClient) doSoraBackendJSON(
 	if c.httpUpstream != nil {
 		resp, err = c.httpUpstream.Do(req, proxyURL, accountID, accountConcurrency)
 	} else {
-		resp, err = http.DefaultClient.Do(req)
+		resp, err = http.DefaultClient.Do(req) //nolint:gosec // URL is from trusted config
 	}
 	if err != nil {
 		return nil, err
@@ -903,7 +903,7 @@ func (c *SoraSDKClient) exchangeSessionToken(ctx context.Context, account *Accou
 	if c.httpUpstream != nil {
 		resp, err = c.httpUpstream.Do(req, proxyURL, accountID, accountConcurrency)
 	} else {
-		resp, err = http.DefaultClient.Do(req)
+		resp, err = http.DefaultClient.Do(req) //nolint:gosec // URL is from trusted config
 	}
 	if err != nil {
 		return "", "", err

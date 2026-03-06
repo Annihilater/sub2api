@@ -28,7 +28,7 @@ func RequestDeviceCode(httpClient *http.Client) (*DeviceCodeResponse, error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := httpClient.Do(req)
+	resp, err := httpClient.Do(req) //nolint:gosec // URL is a trusted constant (DeviceCodeURL)
 	if err != nil {
 		return nil, fmt.Errorf("device code request: %w", err)
 	}
@@ -72,7 +72,7 @@ func PollAccessToken(httpClient *http.Client, deviceCode string) (*AccessTokenRe
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := httpClient.Do(req)
+	resp, err := httpClient.Do(req) //nolint:gosec // URL is a trusted constant (AccessTokenURL)
 	if err != nil {
 		return nil, fmt.Errorf("poll access token: %w", err)
 	}
@@ -104,7 +104,7 @@ func GetGitHubUser(httpClient *http.Client, accessToken string) (*GitHubUser, er
 	req.Header.Set("Authorization", "token "+accessToken)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := httpClient.Do(req)
+	resp, err := httpClient.Do(req) //nolint:gosec // URL is a trusted constant (GitHubUserURL)
 	if err != nil {
 		return nil, fmt.Errorf("get github user: %w", err)
 	}

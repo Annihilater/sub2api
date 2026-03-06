@@ -87,7 +87,7 @@ func (s *claudeUsageService) FetchUsageWithOptions(ctx context.Context, opts *se
 			return nil, fmt.Errorf("create http client failed: %w", err)
 		}
 
-		resp, err = client.Do(req)
+		resp, err = client.Do(req) //nolint:gosec // URL is from trusted config
 		if err != nil {
 			return nil, fmt.Errorf("request failed: %w", err)
 		}

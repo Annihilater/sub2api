@@ -71,7 +71,7 @@ func TestJA3Fingerprint(t *testing.T) {
 	}
 	req.Header.Set("User-Agent", "Claude Code/2.0.0 Node.js/20.0.0")
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted config
 	skipIfExternalServiceUnavailable(t, err)
 	defer func() { _ = resp.Body.Close() }()
 
@@ -258,7 +258,7 @@ func fetchFingerprint(t *testing.T, profile *Profile) *TLSInfo {
 	}
 	req.Header.Set("User-Agent", "Claude Code/2.0.0 Node.js/20.0.0")
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted config
 	skipIfExternalServiceUnavailable(t, err)
 	defer func() { _ = resp.Body.Close() }()
 

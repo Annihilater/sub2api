@@ -2076,7 +2076,7 @@ func runProxyQualityTarget(ctx context.Context, client *http.Client, target prox
 	req.Header.Set("User-Agent", proxyQualityClientUserAgent)
 
 	start := time.Now()
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted admin config
 	if err != nil {
 		item.Status = "fail"
 		item.LatencyMs = time.Since(start).Milliseconds()

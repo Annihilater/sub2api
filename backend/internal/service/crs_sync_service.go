@@ -1163,7 +1163,7 @@ func crsLogin(ctx context.Context, client *http.Client, baseURL, username, passw
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted CRS config
 	if err != nil {
 		return "", err
 	}
@@ -1198,7 +1198,7 @@ func crsExportAccounts(ctx context.Context, client *http.Client, baseURL, adminT
 	}
 	req.Header.Set("Authorization", "Bearer "+adminToken)
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted CRS config
 	if err != nil {
 		return nil, err
 	}

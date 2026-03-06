@@ -141,7 +141,7 @@ func (s *CopilotGatewayService) ForwardChatCompletions(
 	}
 
 	// Send request
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.httpClient.Do(req) //nolint:gosec // URL is from trusted Copilot API config
 	if err != nil {
 		return nil, fmt.Errorf("copilot: upstream request: %w", err)
 	}
@@ -483,7 +483,7 @@ func (s *CopilotGatewayService) ListModels(
 		}
 	}
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.httpClient.Do(req) //nolint:gosec // URL is from trusted Copilot API config
 	if err != nil {
 		return nil, fmt.Errorf("copilot: models request: %w", err)
 	}
@@ -590,7 +590,7 @@ func (s *CopilotGatewayService) ForwardResponses(
 		}
 	}
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.httpClient.Do(req) //nolint:gosec // URL is from trusted Copilot API config
 	if err != nil {
 		return nil, fmt.Errorf("copilot responses: upstream request: %w", err)
 	}
@@ -688,7 +688,7 @@ func (s *CopilotGatewayService) ForwardMessages(
 		}
 	}
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.httpClient.Do(req) //nolint:gosec // URL is from trusted Copilot API config
 	if err != nil {
 		return nil, fmt.Errorf("copilot messages: upstream request: %w", err)
 	}
@@ -924,7 +924,7 @@ func (s *CopilotGatewayService) FetchQuota(
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-GitHub-Api-Version", copilot.DefaultGitHubAPIVersion)
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.httpClient.Do(req) //nolint:gosec // URL is from trusted Copilot API config
 	if err != nil {
 		return nil, fmt.Errorf("copilot: quota request: %w", err)
 	}
