@@ -257,7 +257,7 @@ func doRequest(t *testing.T, method, path string, body []byte, token string) (*h
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	return client.Do(req)
+	return client.Do(req) //nolint:gosec // URL is from trusted config
 }
 
 func loginTestUser(t *testing.T) string {

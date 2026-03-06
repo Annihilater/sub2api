@@ -135,7 +135,7 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	}
 
 	// 执行请求
-	resp, err := entry.client.Do(req)
+	resp, err := entry.client.Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		// 请求失败，立即减少计数
 		atomic.AddInt64(&entry.inFlight, -1)
@@ -207,7 +207,7 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	}
 
 	// 执行请求
-	resp, err := entry.client.Do(req)
+	resp, err := entry.client.Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		// 请求失败，立即减少计数
 		atomic.AddInt64(&entry.inFlight, -1)

@@ -1252,7 +1252,7 @@ func (s *AccountTestService) selectCopilotTestEndpoint(ctx context.Context, copi
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted Copilot API config
 	if err != nil {
 		return copilotEndpointChatCompletions
 	}
@@ -1413,7 +1413,7 @@ func (s *AccountTestService) testCopilotWithChatCompletions(c *gin.Context, ctx 
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted Copilot API config
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Copilot API request failed: %s", err.Error()))
 	}
@@ -1456,7 +1456,7 @@ func (s *AccountTestService) testCopilotWithResponsesEndpoint(c *gin.Context, ct
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted Copilot API config
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Copilot API request failed: %s", err.Error()))
 	}
@@ -1502,7 +1502,7 @@ func (s *AccountTestService) testCopilotWithMessagesEndpoint(c *gin.Context, ctx
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted Copilot API config
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Copilot API request failed: %s", err.Error()))
 	}

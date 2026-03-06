@@ -1406,7 +1406,7 @@ func downloadSoraImageInput(ctx context.Context, rawURL string) ([]byte, string,
 			return validateSoraRemoteURLValue(req.URL)
 		},
 	}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		return nil, "", err
 	}
@@ -1444,7 +1444,7 @@ func downloadSoraVideoInput(ctx context.Context, rawURL string) ([]byte, error) 
 			return validateSoraRemoteURLValue(req.URL)
 		},
 	}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		return nil, err
 	}

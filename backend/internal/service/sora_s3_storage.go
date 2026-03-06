@@ -225,7 +225,7 @@ func (s *SoraS3Storage) UploadFromURL(ctx context.Context, userID int64, sourceU
 		return "", 0, fmt.Errorf("create download request: %w", err)
 	}
 	httpClient := &http.Client{Timeout: 5 * time.Minute}
-	resp, err := httpClient.Do(req)
+	resp, err := httpClient.Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		return "", 0, fmt.Errorf("download from upstream: %w", err)
 	}

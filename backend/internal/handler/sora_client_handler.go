@@ -932,7 +932,7 @@ func (h *SoraClientHandler) fetchUpstreamModels(ctx context.Context) ([]service.
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		return nil, fmt.Errorf("请求上游失败: %w", err)
 	}

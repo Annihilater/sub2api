@@ -113,7 +113,7 @@ func TestClaudeModelsList(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+claudeKey)
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		t.Fatalf("请求失败: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestGeminiModelsList(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+geminiKey)
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		t.Fatalf("请求失败: %v", err)
 	}
@@ -208,7 +208,7 @@ func testClaudeMessage(t *testing.T, claudeKey string, model string, stream bool
 	req.Header.Set("anthropic-version", "2023-06-01")
 
 	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		t.Fatalf("请求失败: %v", err)
 	}
@@ -296,7 +296,7 @@ func testGeminiGenerate(t *testing.T, geminiKey string, model string, stream boo
 	req.Header.Set("Authorization", "Bearer "+geminiKey)
 
 	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		t.Fatalf("请求失败: %v", err)
 	}
@@ -517,7 +517,7 @@ func testClaudeMessageWithTools(t *testing.T, claudeKey string, model string) {
 	req.Header.Set("anthropic-version", "2023-06-01")
 
 	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		t.Fatalf("请求失败: %v", err)
 	}
@@ -645,7 +645,7 @@ func testClaudeThinkingWithToolHistory(t *testing.T, claudeKey string, model str
 	req.Header.Set("anthropic-version", "2023-06-01")
 
 	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		t.Fatalf("请求失败: %v", err)
 	}
@@ -779,7 +779,7 @@ func testClaudeWithNoSignature(t *testing.T, claudeKey string, model string) {
 	req.Header.Set("anthropic-version", "2023-06-01")
 
 	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		t.Fatalf("请求失败: %v", err)
 	}

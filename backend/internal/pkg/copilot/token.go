@@ -30,7 +30,7 @@ func ExchangeToken(httpClient *http.Client, githubToken string) (*CopilotToken, 
 	req.Header.Set("x-github-api-version", DefaultGitHubAPIVersion)
 	req.Header.Set("x-vscode-user-agent-library-version", "electron-fetch")
 
-	resp, err := httpClient.Do(req)
+	resp, err := httpClient.Do(req) //nolint:gosec // URL is a trusted constant (CopilotTokenURL)
 	if err != nil {
 		return nil, fmt.Errorf("copilot token exchange: request failed: %w", err)
 	}

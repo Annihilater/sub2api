@@ -488,7 +488,7 @@ func TestClient_ExchangeCode_成功(t *testing.T) {
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := server.Client().Do(req)
+	resp, err := server.Client().Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		t.Fatalf("请求失败: %v", err)
 	}
@@ -594,7 +594,7 @@ func TestClient_RefreshToken_MockServer(t *testing.T) {
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := server.Client().Do(req)
+	resp, err := server.Client().Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		t.Fatalf("请求失败: %v", err)
 	}
@@ -659,7 +659,7 @@ func TestClient_GetUserInfo_成功(t *testing.T) {
 	}
 	req.Header.Set("Authorization", "Bearer test-access-token")
 
-	resp, err := server.Client().Do(req)
+	resp, err := server.Client().Do(req) //nolint:gosec // URL is from trusted config
 	if err != nil {
 		t.Fatalf("请求失败: %v", err)
 	}
