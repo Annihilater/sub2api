@@ -796,6 +796,12 @@ func (s *CopilotGatewayService) handleMessagesStreamingResponse(
 
 	if err := scanner.Err(); err != nil {
 		slog.Warn("copilot messages stream scanner error", "error", err)
+		// The upstream connection was interrupted (e.g. unexpected EOF).
+		// The client already received partial SSE events but never got the
+		// required termination sequence.  Emit the missing closing events
+		// so the Anthropic client (Claude Code) knows the stream is done
+		// and doesn't hang waiting forever.
+		s.emitStreamTerminationEvents(c.Writer, flusher, state, usage)
 	}
 
 	return &CopilotForwardResult{
@@ -805,6 +811,50 @@ func (s *CopilotGatewayService) handleMessagesStreamingResponse(
 		Duration:     time.Since(startTime),
 		FirstTokenMs: firstTokenMs,
 	}, nil
+}
+
+// emitStreamTerminationEvents sends the Anthropic SSE closing sequence that
+// the client expects.  It is called when the upstream connection breaks
+// (e.g. unexpected EOF) so that Claude Code receives a proper stream end
+// instead of hanging indefinitely.
+func (s *CopilotGatewayService) emitStreamTerminationEvents(
+	w io.Writer, flusher http.Flusher,
+	state *copilotStreamState, usage *CopilotUsage,
+) {
+	// 1. Close any open content block.
+	if state.blockOpen {
+		evt := blockStopEvent(state.blockIndex)
+		fmt.Fprintf(w, "event: content_block_stop\ndata: %s\n\n", evt)
+		flusher.Flush()
+	}
+
+	// 2. Send message_delta with stop_reason="end_turn" and accumulated usage.
+	inputTokens := 0
+	outputTokens := 0
+	if usage != nil {
+		inputTokens = usage.PromptTokens
+		outputTokens = usage.CompletionTokens
+	}
+	msgDelta := map[string]any{
+		"type": "message_delta",
+		"delta": map[string]any{
+			"stop_reason":   "end_turn",
+			"stop_sequence": nil,
+		},
+		"usage": map[string]any{
+			"input_tokens":  inputTokens,
+			"output_tokens": outputTokens,
+		},
+	}
+	if b, err := json.Marshal(msgDelta); err == nil {
+		fmt.Fprintf(w, "event: message_delta\ndata: %s\n\n", string(b))
+		flusher.Flush()
+	}
+
+	// 3. Send message_stop to signal the stream is complete.
+	msgStop, _ := json.Marshal(map[string]string{"type": "message_stop"})
+	fmt.Fprintf(w, "event: message_stop\ndata: %s\n\n", string(msgStop))
+	flusher.Flush()
 }
 
 // handleMessagesStreamToNonStreamingResponse reads a streaming SSE response
