@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,48 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/copilot"
 	"github.com/gin-gonic/gin"
 )
+
+func TestCopilotInitiator(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			"first user turn – no history",
+			`{"messages":[{"role":"user","content":"hi"}]}`,
+			"user",
+		},
+		{
+			"multi-turn with assistant – agent call",
+			`{"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"hello"},{"role":"user","content":"more"}]}`,
+			"agent",
+		},
+		{
+			"tool result message – agent call",
+			`{"messages":[{"role":"user","content":"hi"},{"role":"tool","content":"result"}]}`,
+			"agent",
+		},
+		{
+			"system + user only",
+			`{"messages":[{"role":"system","content":"you are helpful"},{"role":"user","content":"hi"}]}`,
+			"user",
+		},
+		{
+			"invalid json defaults to user",
+			`{invalid`,
+			"user",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := copilotInitiator([]byte(tt.body))
+			if got != tt.want {
+				t.Errorf("copilotInitiator() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestDetectStreamMode(t *testing.T) {
 	tests := []struct {
@@ -366,6 +409,121 @@ func TestCopilotGatewayService_ListModels(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "500") {
 			t.Errorf("error should mention status code, got: %v", err)
+		}
+	})
+}
+
+// ── OpenAI body merge ─────────────────────────────────────────────────────────
+
+func TestMergeConsecutiveSameRoleMessagesInOpenAIBody(t *testing.T) {
+	t.Run("consecutive user messages merged", func(t *testing.T) {
+		body := `{"model":"claude-sonnet-4.6","stream":true,"messages":[
+			{"role":"user","content":"<available-deferred-tools>\nAgent\n</available-deferred-tools>"},
+			{"role":"user","content":"hello world"}
+		]}`
+		got := mergeConsecutiveSameRoleMessagesInOpenAIBody([]byte(body))
+
+		var result struct {
+			Model    string `json:"model"`
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(got, &result); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+
+		if result.Model != "claude-sonnet-4.6" {
+			t.Errorf("model = %q, want claude-sonnet-4.6 (other fields preserved)", result.Model)
+		}
+		userCount := 0
+		for _, m := range result.Messages {
+			if m.Role == "user" {
+				userCount++
+			}
+		}
+		if userCount != 1 {
+			t.Errorf("expected 1 merged user message, got %d: %v", userCount, result.Messages)
+		}
+		if len(result.Messages) > 0 && !strings.Contains(result.Messages[0].Content, "available-deferred-tools") {
+			t.Errorf("merged content missing first part: %q", result.Messages[0].Content)
+		}
+		if len(result.Messages) > 0 && !strings.Contains(result.Messages[0].Content, "hello world") {
+			t.Errorf("merged content missing second part: %q", result.Messages[0].Content)
+		}
+	})
+
+	t.Run("alternating roles not merged", func(t *testing.T) {
+		body := `{"model":"gpt-4o","messages":[
+			{"role":"user","content":"hi"},
+			{"role":"assistant","content":"hello"},
+			{"role":"user","content":"again"}
+		]}`
+		got := mergeConsecutiveSameRoleMessagesInOpenAIBody([]byte(body))
+
+		var result struct {
+			Messages []struct {
+				Role string `json:"role"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(got, &result); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if len(result.Messages) != 3 {
+			t.Errorf("expected 3 messages (no merge), got %d", len(result.Messages))
+		}
+	})
+
+	t.Run("content parts array merged as text", func(t *testing.T) {
+		body := `{"model":"gpt-4o","messages":[
+			{"role":"user","content":[{"type":"text","text":"part one"}]},
+			{"role":"user","content":"part two"}
+		]}`
+		got := mergeConsecutiveSameRoleMessagesInOpenAIBody([]byte(body))
+
+		var result struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(got, &result); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if len(result.Messages) != 1 {
+			t.Errorf("expected 1 merged message, got %d", len(result.Messages))
+		}
+		if !strings.Contains(result.Messages[0].Content, "part one") ||
+			!strings.Contains(result.Messages[0].Content, "part two") {
+			t.Errorf("merged content = %q, want both parts", result.Messages[0].Content)
+		}
+	})
+
+	t.Run("invalid json returned unchanged", func(t *testing.T) {
+		body := []byte(`{invalid json`)
+		got := mergeConsecutiveSameRoleMessagesInOpenAIBody(body)
+		if string(got) != string(body) {
+			t.Errorf("expected original body returned on parse error")
+		}
+	})
+
+	t.Run("other fields preserved", func(t *testing.T) {
+		body := `{"model":"gpt-4o","stream":true,"temperature":0.7,"messages":[
+			{"role":"user","content":"hi"}
+		]}`
+		got := mergeConsecutiveSameRoleMessagesInOpenAIBody([]byte(body))
+
+		var result struct {
+			Model       string  `json:"model"`
+			Stream      bool    `json:"stream"`
+			Temperature float64 `json:"temperature"`
+		}
+		if err := json.Unmarshal(got, &result); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if result.Model != "gpt-4o" || !result.Stream || result.Temperature != 0.7 {
+			t.Errorf("fields not preserved: %+v", result)
 		}
 	})
 }
