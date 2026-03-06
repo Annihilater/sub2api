@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/copilot"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 // CopilotGatewayService handles forwarding requests to the GitHub Copilot API.
@@ -638,14 +639,21 @@ func (s *CopilotGatewayService) ForwardMessages(
 ) (*CopilotForwardResult, error) {
 	startTime := time.Now()
 
-	// Detect streaming before translation (we need to know for the response path).
-	isStream := detectAnthropicStream(anthropicBody)
+	// Detect whether the *client* wants streaming (we need to know for the response path).
+	clientWantsStream := detectAnthropicStream(anthropicBody)
 
 	// Translate Anthropic request → OpenAI format.
 	openAIBody, err := translateAnthropicToOpenAI(anthropicBody, nil)
 	if err != nil {
 		return nil, fmt.Errorf("copilot messages: translate request: %w", err)
 	}
+
+	// Force stream=true for all upstream Copilot requests.
+	// Copilot's non-streaming endpoint often hangs for 60s on Claude models,
+	// causing context-canceled timeouts.  Streaming is much more reliable and
+	// we can reassemble the chunks into a non-streaming Anthropic response
+	// when the client requested stream=false.
+	openAIBody = forceStreamTrue(openAIBody)
 
 	// Extract model name for logging.
 	model := extractModelFromBody(openAIBody)
@@ -697,53 +705,20 @@ func (s *CopilotGatewayService) ForwardMessages(
 		"account_id", account.ID,
 		"model", model,
 		"status", resp.StatusCode,
-		"stream", isStream,
+		"client_stream", clientWantsStream,
 		"latency_ms", time.Since(startTime).Milliseconds())
 
 	if resp.StatusCode != http.StatusOK {
 		return s.handleErrorResponse(c, resp, account)
 	}
 
-	if isStream {
+	if clientWantsStream {
+		// Client wants SSE → stream Anthropic events directly.
 		return s.handleMessagesStreamingResponse(c, resp, model, startTime)
 	}
-	return s.handleMessagesNonStreamingResponse(c, resp, model, startTime)
-}
-
-// handleMessagesNonStreamingResponse reads the OpenAI response and writes back
-// an Anthropic-format JSON response.
-func (s *CopilotGatewayService) handleMessagesNonStreamingResponse(
-	c *gin.Context,
-	resp *http.Response,
-	model string,
-	startTime time.Time,
-) (*CopilotForwardResult, error) {
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("copilot messages: read response: %w", err)
-	}
-
-	usage := s.parseNonStreamUsage(body)
-
-	// Translate OpenAI response → Anthropic format.
-	anthropicBody, err := translateOpenAIToAnthropic(body)
-	if err != nil {
-		slog.Warn("copilot messages: failed to translate response, forwarding raw",
-			"error", err, "model", model)
-		// Fall back to raw body so the client gets something.
-		c.Data(http.StatusOK, "application/json", body)
-		return &CopilotForwardResult{StatusCode: http.StatusOK, Model: model, Usage: usage, Duration: time.Since(startTime)}, nil
-	}
-
-	c.Data(http.StatusOK, "application/json", anthropicBody)
-	return &CopilotForwardResult{
-		StatusCode: http.StatusOK,
-		Model:      model,
-		Usage:      usage,
-		Duration:   time.Since(startTime),
-	}, nil
+	// Client wants non-streaming Anthropic JSON, but upstream is streaming.
+	// Reassemble the SSE chunks into a single OpenAI response, then translate.
+	return s.handleMessagesStreamToNonStreamingResponse(c, resp, model, startTime)
 }
 
 // handleMessagesStreamingResponse reads the Copilot SSE stream, translates each
@@ -832,6 +807,181 @@ func (s *CopilotGatewayService) handleMessagesStreamingResponse(
 	}, nil
 }
 
+// handleMessagesStreamToNonStreamingResponse reads a streaming SSE response
+// from the Copilot API, reassembles the chunks into a single OpenAI-format
+// response, translates it to Anthropic format, and writes it as a normal
+// (non-streaming) JSON response.
+//
+// This is used when the client sent stream=false but we forced stream=true
+// upstream to avoid Copilot's non-streaming timeout issues.
+func (s *CopilotGatewayService) handleMessagesStreamToNonStreamingResponse(
+	c *gin.Context,
+	resp *http.Response,
+	model string,
+	startTime time.Time,
+) (*CopilotForwardResult, error) {
+	defer func() { _ = resp.Body.Close() }()
+
+	// Accumulated state from all chunks.
+	var (
+		respID         string
+		respModel      string
+		contentBuilder strings.Builder
+		finishReason   string
+		toolCalls      = make(map[int]*openAIToolCall) // index → accumulated tool call
+		usage          *openAIUsage
+		firstTokenMs   *int
+	)
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := line[6:]
+		if data == "[DONE]" {
+			break
+		}
+
+		var chunk openAIChatStreamChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue
+		}
+
+		if firstTokenMs == nil {
+			ms := int(time.Since(startTime).Milliseconds())
+			firstTokenMs = &ms
+		}
+
+		if respID == "" {
+			respID = chunk.ID
+		}
+		if respModel == "" {
+			respModel = chunk.Model
+		}
+
+		if chunk.Usage != nil {
+			usage = chunk.Usage
+		}
+
+		for _, choice := range chunk.Choices {
+			if choice.Delta.Content != "" {
+				_, _ = contentBuilder.WriteString(choice.Delta.Content)
+			}
+			if choice.FinishReason != "" {
+				finishReason = choice.FinishReason
+			}
+			// Accumulate tool calls by index.
+			for _, tcd := range choice.Delta.ToolCalls {
+				tc, ok := toolCalls[tcd.Index]
+				if !ok {
+					tc = &openAIToolCall{
+						ID:   tcd.ID,
+						Type: tcd.Type,
+						Function: openAIFunctionCall{
+							Name:      tcd.Function.Name,
+							Arguments: tcd.Function.Arguments,
+						},
+					}
+					toolCalls[tcd.Index] = tc
+				} else {
+					if tcd.ID != "" {
+						tc.ID = tcd.ID
+					}
+					if tcd.Function.Name != "" {
+						tc.Function.Name = tcd.Function.Name
+					}
+					tc.Function.Arguments += tcd.Function.Arguments
+				}
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		slog.Warn("copilot messages stream-to-nonstream scanner error", "error", err)
+	}
+
+	// Build the reconstructed OpenAI non-streaming response.
+	msg := openAIMessage{
+		Role:    "assistant",
+		Content: contentBuilder.String(),
+	}
+	// Attach accumulated tool calls in index order.
+	if len(toolCalls) > 0 {
+		sorted := make([]openAIToolCall, 0, len(toolCalls))
+		for i := 0; i < len(toolCalls); i++ {
+			if tc, ok := toolCalls[i]; ok {
+				sorted = append(sorted, *tc)
+			}
+		}
+		msg.ToolCalls = sorted
+		// If there are tool calls but no text, set content to nil (null)
+		// to match the standard OpenAI response format.
+		if contentBuilder.Len() == 0 {
+			msg.Content = nil
+		}
+	}
+
+	assembled := openAIChatResponse{
+		ID:    respID,
+		Model: respModel,
+		Choices: []openAIChoice{
+			{
+				Index:        0,
+				Message:      msg,
+				FinishReason: finishReason,
+			},
+		},
+		Usage: usage,
+	}
+
+	assembledBody, err := json.Marshal(assembled)
+	if err != nil {
+		return nil, fmt.Errorf("copilot messages: marshal assembled response: %w", err)
+	}
+
+	slog.Debug("copilot messages stream-to-nonstream assembled",
+		"model", model,
+		"content_len", contentBuilder.Len(),
+		"tool_calls", len(toolCalls),
+		"finish_reason", finishReason)
+
+	// Parse usage for result tracking.
+	copilotUsage := &CopilotUsage{}
+	if usage != nil {
+		copilotUsage.PromptTokens = usage.PromptTokens
+		copilotUsage.CompletionTokens = usage.CompletionTokens
+		copilotUsage.TotalTokens = usage.TotalTokens
+	}
+
+	// Translate assembled OpenAI response → Anthropic format.
+	anthropicBody, err := translateOpenAIToAnthropic(assembledBody)
+	if err != nil {
+		slog.Warn("copilot messages: failed to translate assembled response, forwarding raw",
+			"error", err, "model", model)
+		c.Data(http.StatusOK, "application/json", assembledBody)
+		return &CopilotForwardResult{
+			StatusCode:   http.StatusOK,
+			Model:        model,
+			Usage:        copilotUsage,
+			Duration:     time.Since(startTime),
+			FirstTokenMs: firstTokenMs,
+		}, nil
+	}
+
+	c.Data(http.StatusOK, "application/json", anthropicBody)
+	return &CopilotForwardResult{
+		StatusCode:   http.StatusOK,
+		Model:        model,
+		Usage:        copilotUsage,
+		Duration:     time.Since(startTime),
+		FirstTokenMs: firstTokenMs,
+	}, nil
+}
+
 // detectAnthropicStream checks if an Anthropic request body has "stream": true.
 func detectAnthropicStream(body []byte) bool {
 	var req struct {
@@ -841,6 +991,23 @@ func detectAnthropicStream(body []byte) bool {
 		return false
 	}
 	return req.Stream
+}
+
+// forceStreamTrue rewrites the JSON body so that "stream" is always true.
+// This is used to force streaming mode for upstream Copilot requests, even
+// when the client originally sent stream=false, because non-streaming requests
+// to Copilot often hang until timeout on Claude models.
+func forceStreamTrue(body []byte) []byte {
+	result := gjson.GetBytes(body, "stream")
+	if result.Exists() && result.Bool() {
+		return body // already true
+	}
+	// Use sjson to set stream=true; fall back to original body on error.
+	out, err := sjson.SetBytes(body, "stream", true)
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 // extractEventType reads the "type" field from a JSON event object for the SSE
