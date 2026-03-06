@@ -209,13 +209,15 @@ jobs:
           retention-days: 7
 
       # ------------------------------------------------------------------
-      # tag push 时：额外上传到 GitHub Release Assets
+      # 始终上传到 GitHub Release Assets：
+      #   - tag push    → 正式 Release（带版本号 tag）
+      #   - 手动触发    → Pre-release（tag 为指定的 version，如 latest）
       # ------------------------------------------------------------------
       - name: Upload to GitHub Release
-        if: env.IS_TAG_PUSH == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION }}
+          prerelease: ${{ env.IS_TAG_PUSH != 'true' }}
           files: artifact/sub2api-deploy-${{ env.VERSION }}.zip
           fail_on_unmatched_files: true
 

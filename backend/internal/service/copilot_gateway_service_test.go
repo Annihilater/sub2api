@@ -13,6 +13,48 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func TestCopilotInitiator(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			"first user turn – no history",
+			`{"messages":[{"role":"user","content":"hi"}]}`,
+			"user",
+		},
+		{
+			"multi-turn with assistant – agent call",
+			`{"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"hello"},{"role":"user","content":"more"}]}`,
+			"agent",
+		},
+		{
+			"tool result message – agent call",
+			`{"messages":[{"role":"user","content":"hi"},{"role":"tool","content":"result"}]}`,
+			"agent",
+		},
+		{
+			"system + user only",
+			`{"messages":[{"role":"system","content":"you are helpful"},{"role":"user","content":"hi"}]}`,
+			"user",
+		},
+		{
+			"invalid json defaults to user",
+			`{invalid`,
+			"user",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := copilotInitiator([]byte(tt.body))
+			if got != tt.want {
+				t.Errorf("copilotInitiator() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDetectStreamMode(t *testing.T) {
 	tests := []struct {
 		name string
@@ -36,93 +78,6 @@ func TestDetectStreamMode(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestCopilotGatewayService_ApplyModelMapping(t *testing.T) {
-	svc := &CopilotGatewayService{}
-
-	t.Run("no mapping configured", func(t *testing.T) {
-		account := &Account{
-			Platform:    PlatformCopilot,
-			Credentials: map[string]any{},
-		}
-		body := []byte(`{"model":"gpt-4o","messages":[]}`)
-
-		newBody, model := svc.applyModelMapping(body, account)
-		if model != "gpt-4o" {
-			t.Errorf("model = %q, want %q", model, "gpt-4o")
-		}
-		// Body should be unchanged
-		var req map[string]json.RawMessage
-		if err := json.Unmarshal(newBody, &req); err != nil {
-			t.Fatalf("failed to unmarshal body: %v", err)
-		}
-		var m string
-		if err := json.Unmarshal(req["model"], &m); err != nil {
-			t.Fatalf("failed to unmarshal model: %v", err)
-		}
-		if m != "gpt-4o" {
-			t.Errorf("body model = %q, want %q", m, "gpt-4o")
-		}
-	})
-
-	t.Run("with mapping", func(t *testing.T) {
-		account := &Account{
-			Platform: PlatformCopilot,
-			Credentials: map[string]any{
-				"model_mapping": map[string]any{
-					"gpt-4": "gpt-4o",
-				},
-			},
-		}
-		body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}`)
-
-		newBody, model := svc.applyModelMapping(body, account)
-		if model != "gpt-4" {
-			t.Errorf("model = %q, want %q (original)", model, "gpt-4")
-		}
-		// Body should have mapped model
-		var req map[string]json.RawMessage
-		if err := json.Unmarshal(newBody, &req); err != nil {
-			t.Fatalf("failed to unmarshal body: %v", err)
-		}
-		var m string
-		if err := json.Unmarshal(req["model"], &m); err != nil {
-			t.Fatalf("failed to unmarshal model: %v", err)
-		}
-		if m != "gpt-4o" {
-			t.Errorf("body model = %q, want %q", m, "gpt-4o")
-		}
-	})
-
-	t.Run("empty model", func(t *testing.T) {
-		account := &Account{
-			Platform:    PlatformCopilot,
-			Credentials: map[string]any{},
-		}
-		body := []byte(`{"messages":[]}`)
-
-		_, model := svc.applyModelMapping(body, account)
-		if model != "" {
-			t.Errorf("model = %q, want empty", model)
-		}
-	})
-
-	t.Run("invalid json", func(t *testing.T) {
-		account := &Account{
-			Platform:    PlatformCopilot,
-			Credentials: map[string]any{},
-		}
-		body := []byte(`{invalid}`)
-
-		retBody, model := svc.applyModelMapping(body, account)
-		if model != "" {
-			t.Errorf("model = %q, want empty", model)
-		}
-		if string(retBody) != string(body) {
-			t.Errorf("body should be unchanged for invalid json")
-		}
-	})
 }
 
 func TestCopilotGatewayService_ParseStreamUsage(t *testing.T) {
@@ -454,6 +409,121 @@ func TestCopilotGatewayService_ListModels(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "500") {
 			t.Errorf("error should mention status code, got: %v", err)
+		}
+	})
+}
+
+// ── OpenAI body merge ─────────────────────────────────────────────────────────
+
+func TestMergeConsecutiveSameRoleMessagesInOpenAIBody(t *testing.T) {
+	t.Run("consecutive user messages merged", func(t *testing.T) {
+		body := `{"model":"claude-sonnet-4.6","stream":true,"messages":[
+			{"role":"user","content":"<available-deferred-tools>\nAgent\n</available-deferred-tools>"},
+			{"role":"user","content":"hello world"}
+		]}`
+		got := mergeConsecutiveSameRoleMessagesInOpenAIBody([]byte(body))
+
+		var result struct {
+			Model    string `json:"model"`
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(got, &result); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+
+		if result.Model != "claude-sonnet-4.6" {
+			t.Errorf("model = %q, want claude-sonnet-4.6 (other fields preserved)", result.Model)
+		}
+		userCount := 0
+		for _, m := range result.Messages {
+			if m.Role == "user" {
+				userCount++
+			}
+		}
+		if userCount != 1 {
+			t.Errorf("expected 1 merged user message, got %d: %v", userCount, result.Messages)
+		}
+		if len(result.Messages) > 0 && !strings.Contains(result.Messages[0].Content, "available-deferred-tools") {
+			t.Errorf("merged content missing first part: %q", result.Messages[0].Content)
+		}
+		if len(result.Messages) > 0 && !strings.Contains(result.Messages[0].Content, "hello world") {
+			t.Errorf("merged content missing second part: %q", result.Messages[0].Content)
+		}
+	})
+
+	t.Run("alternating roles not merged", func(t *testing.T) {
+		body := `{"model":"gpt-4o","messages":[
+			{"role":"user","content":"hi"},
+			{"role":"assistant","content":"hello"},
+			{"role":"user","content":"again"}
+		]}`
+		got := mergeConsecutiveSameRoleMessagesInOpenAIBody([]byte(body))
+
+		var result struct {
+			Messages []struct {
+				Role string `json:"role"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(got, &result); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if len(result.Messages) != 3 {
+			t.Errorf("expected 3 messages (no merge), got %d", len(result.Messages))
+		}
+	})
+
+	t.Run("content parts array merged as text", func(t *testing.T) {
+		body := `{"model":"gpt-4o","messages":[
+			{"role":"user","content":[{"type":"text","text":"part one"}]},
+			{"role":"user","content":"part two"}
+		]}`
+		got := mergeConsecutiveSameRoleMessagesInOpenAIBody([]byte(body))
+
+		var result struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(got, &result); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if len(result.Messages) != 1 {
+			t.Errorf("expected 1 merged message, got %d", len(result.Messages))
+		}
+		if !strings.Contains(result.Messages[0].Content, "part one") ||
+			!strings.Contains(result.Messages[0].Content, "part two") {
+			t.Errorf("merged content = %q, want both parts", result.Messages[0].Content)
+		}
+	})
+
+	t.Run("invalid json returned unchanged", func(t *testing.T) {
+		body := []byte(`{invalid json`)
+		got := mergeConsecutiveSameRoleMessagesInOpenAIBody(body)
+		if string(got) != string(body) {
+			t.Errorf("expected original body returned on parse error")
+		}
+	})
+
+	t.Run("other fields preserved", func(t *testing.T) {
+		body := `{"model":"gpt-4o","stream":true,"temperature":0.7,"messages":[
+			{"role":"user","content":"hi"}
+		]}`
+		got := mergeConsecutiveSameRoleMessagesInOpenAIBody([]byte(body))
+
+		var result struct {
+			Model       string  `json:"model"`
+			Stream      bool    `json:"stream"`
+			Temperature float64 `json:"temperature"`
+		}
+		if err := json.Unmarshal(got, &result); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if result.Model != "gpt-4o" || !result.Stream || result.Temperature != 0.7 {
+			t.Errorf("fields not preserved: %+v", result)
 		}
 	})
 }

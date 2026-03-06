@@ -10,7 +10,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -19,11 +18,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
-
-// claudeModelDotPattern matches Claude model IDs with dot-separated versions,
-// e.g. "claude-sonnet-4.5", "claude-opus-4.6", "claude-haiku-4.5".
-// Used to rewrite these for clients that expect dash-separated versions.
-var claudeModelDotPattern = regexp.MustCompile(`claude-(?:sonnet|opus|haiku)-\d+\.\d+`)
 
 // CopilotGatewayService handles forwarding requests to the GitHub Copilot API.
 //
@@ -97,6 +91,12 @@ func (s *CopilotGatewayService) ForwardChatCompletions(
 ) (*CopilotForwardResult, error) {
 	startTime := time.Now()
 
+	// Normalize the OpenAI request body before forwarding:
+	// merge consecutive same-role messages so Copilot API doesn't reject with 400.
+	// Claude Code (via cc-switch OpenAI mode) sends adjacent user messages
+	// (e.g. <available-deferred-tools> + actual message) that Copilot rejects.
+	body = mergeConsecutiveSameRoleMessagesInOpenAIBody(body)
+
 	// Get Copilot API token
 	token, err := s.tokenProvider.GetAccessToken(ctx, account)
 	if err != nil {
@@ -114,11 +114,15 @@ func (s *CopilotGatewayService) ForwardChatCompletions(
 		baseURL = copilot.ChatBaseURLForPlan(planType)
 	}
 
-	// Apply model mapping if configured
-	body, model := s.applyModelMapping(body, account)
+	// Extract model from request body for logging
+	model := extractModelFromBody(body)
 
 	// Detect streaming mode
 	isStream := detectStreamMode(body)
+
+	// Determine X-Initiator: "agent" for multi-turn conversations (has assistant/tool messages),
+	// "user" for the first turn. Matches TypeScript copilot-api reference logic.
+	initiator := copilotInitiator(body)
 
 	// Build upstream request
 	upstreamURL := baseURL + "/chat/completions"
@@ -130,7 +134,7 @@ func (s *CopilotGatewayService) ForwardChatCompletions(
 	// Set Copilot-specific headers
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	for k, vals := range copilot.CopilotHeaders("user", false) {
+	for k, vals := range copilot.CopilotHeaders(initiator, false) {
 		for _, v := range vals {
 			req.Header.Set(k, v)
 		}
@@ -302,35 +306,43 @@ func (s *CopilotGatewayService) handleErrorResponse(
 	}, nil
 }
 
-// applyModelMapping applies model mapping from account configuration.
-func (s *CopilotGatewayService) applyModelMapping(body []byte, account *Account) ([]byte, string) {
-	// Extract model from request body
+// copilotInitiator returns the value for the X-Initiator header.
+//
+// When the conversation already includes an assistant or tool message
+// (multi-turn / sub-agent call), Copilot expects "agent" which draws from the
+// standard quota instead of the premium-interaction quota.  For fresh user
+// messages the value is "user".
+//
+// This matches the logic in the TypeScript copilot-api reference:
+//
+//	const isAgentCall = payload.messages.some(msg =>
+//	  ["assistant", "tool"].includes(msg.role))
+func copilotInitiator(openAIBody []byte) string {
+	var req struct {
+		Messages []struct {
+			Role string `json:"role"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(openAIBody, &req); err != nil {
+		return "user"
+	}
+	for _, m := range req.Messages {
+		if m.Role == "assistant" || m.Role == "tool" {
+			return "agent"
+		}
+	}
+	return "user"
+}
+
+// extractModelFromBody reads the model field from a JSON request body.
+func extractModelFromBody(body []byte) string {
 	var req struct {
 		Model string `json:"model"`
 	}
-	if err := json.Unmarshal(body, &req); err != nil || req.Model == "" {
-		return body, ""
+	if err := json.Unmarshal(body, &req); err != nil {
+		return ""
 	}
-
-	originalModel := req.Model
-	mappedModel := account.GetMappedModel(originalModel)
-
-	if mappedModel != originalModel {
-		// Replace model in request body
-		var raw map[string]json.RawMessage
-		if err := json.Unmarshal(body, &raw); err == nil {
-			modelBytes, _ := json.Marshal(mappedModel)
-			raw["model"] = modelBytes
-			if newBody, err := json.Marshal(raw); err == nil {
-				slog.Debug("copilot model mapping",
-					"original", originalModel,
-					"mapped", mappedModel)
-				return newBody, originalModel
-			}
-		}
-	}
-
-	return body, originalModel
+	return req.Model
 }
 
 // detectStreamMode checks if the request body has "stream": true.
@@ -486,21 +498,6 @@ func (s *CopilotGatewayService) ListModels(
 		return nil, fmt.Errorf("copilot: models HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Rewrite model IDs: replace dots with dashes in Claude model names so that
-	// Claude Code's built-in model whitelist accepts them.
-	// e.g. "claude-sonnet-4.5" → "claude-sonnet-4-5"
-	// The reverse mapping is applied in normalizeCopilotModel when forwarding requests.
-	body = rewriteModelIDsForClient(body)
-
-	// Apply account-level model mapping to the model list so that users always
-	// see the mapped (standardized) model IDs instead of the raw Copilot IDs.
-	// e.g. if the account maps "claude-sonnet-4-5" → "claude-sonnet-4-5-20250929",
-	// the returned model list will show the mapped ID.
-	modelMapping := account.GetModelMapping()
-	if len(modelMapping) > 0 {
-		body = applyMappingToModelsList(body, modelMapping)
-	}
-
 	// Deduplicate model IDs — the Copilot API may return the same model ID
 	// more than once (e.g. gpt-4o appears twice in some responses).
 	body = deduplicateModelsList(body)
@@ -544,83 +541,6 @@ func deduplicateModelsList(body []byte) []byte {
 	return out
 }
 
-// applyMappingToModelsList rewrites model IDs in an OpenAI-format /models JSON
-// response according to the provided mapping table.
-//
-// Only the "id" field of each model object is rewritten; all other fields are
-// preserved as-is. Models whose IDs are not present in the mapping are returned
-// unchanged.
-func applyMappingToModelsList(body []byte, modelMapping map[string]string) []byte {
-	// Parse the OpenAI models response: {"object":"list","data":[{"id":"..."},...]}
-	var resp struct {
-		Object string            `json:"object"`
-		Data   []json.RawMessage `json:"data"`
-	}
-	if err := json.Unmarshal(body, &resp); err != nil {
-		// Not parseable — return as-is rather than breaking the response.
-		return body
-	}
-
-	rewritten := make([]json.RawMessage, 0, len(resp.Data))
-	for _, raw := range resp.Data {
-		// Extract the model ID.
-		var m struct {
-			ID string `json:"id"`
-		}
-		if err := json.Unmarshal(raw, &m); err != nil || m.ID == "" {
-			rewritten = append(rewritten, raw)
-			continue
-		}
-
-		mapped, ok := modelMapping[m.ID]
-		if !ok || mapped == "" {
-			rewritten = append(rewritten, raw)
-			continue
-		}
-
-		// Replace the "id" (and "display_name" if present) in the raw JSON object.
-		var obj map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &obj); err != nil {
-			rewritten = append(rewritten, raw)
-			continue
-		}
-		idBytes, _ := json.Marshal(mapped)
-		obj["id"] = idBytes
-		// Update display_name to match the mapped ID for clarity.
-		obj["display_name"] = idBytes
-
-		replaced, err := json.Marshal(obj)
-		if err != nil {
-			rewritten = append(rewritten, raw)
-			continue
-		}
-		rewritten = append(rewritten, replaced)
-	}
-
-	resp.Data = rewritten
-	out, err := json.Marshal(resp)
-	if err != nil {
-		return body
-	}
-	return out
-}
-
-// rewriteModelIDsForClient rewrites Claude model IDs in a Copilot /models JSON
-// response, replacing dots with dashes so that Claude Code's built-in model
-// whitelist accepts them.
-//
-// e.g. "claude-sonnet-4.5" → "claude-sonnet-4-5"
-//
-// Only Claude model IDs are rewritten; GPT and other models are left unchanged.
-func rewriteModelIDsForClient(body []byte) []byte {
-	// Simple string replacement on the raw JSON — fast and avoids full parse/re-encode.
-	// We replace patterns like "claude-xxx-N.M" → "claude-xxx-N-M".
-	result := claudeModelDotPattern.ReplaceAllFunc(body, func(match []byte) []byte {
-		return bytes.ReplaceAll(match, []byte{'.'}, []byte{'-'})
-	})
-	return result
-}
-
 // OpenAI Responses API gateway (Codex CLI)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -654,7 +574,7 @@ func (s *CopilotGatewayService) ForwardResponses(
 	reasoningEffort := extractCopilotReasoningEffort(body)
 
 	// Apply model mapping and normalize model name (dash→dot for Claude models).
-	body, model := s.applyNormalizedModelMapping(body, account)
+	model := extractModelFromBody(body)
 
 	isStream := detectStreamMode(body)
 
@@ -701,40 +621,6 @@ func (s *CopilotGatewayService) ForwardResponses(
 	return result, nil
 }
 
-// applyNormalizedModelMapping applies account model mapping AND normalizes the
-// model name for the Copilot API (dash→dot conversion for Claude models,
-// e.g. "claude-sonnet-4-5" → "claude-sonnet-4.5").
-func (s *CopilotGatewayService) applyNormalizedModelMapping(body []byte, account *Account) ([]byte, string) {
-	var req struct {
-		Model string `json:"model"`
-	}
-	if err := json.Unmarshal(body, &req); err != nil || req.Model == "" {
-		return body, ""
-	}
-
-	originalModel := req.Model
-	normalized := normalizeCopilotModel(originalModel, account.GetModelMapping())
-
-	if normalized == originalModel {
-		return body, originalModel
-	}
-
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return body, originalModel
-	}
-	modelBytes, _ := json.Marshal(normalized)
-	raw["model"] = modelBytes
-	newBody, err := json.Marshal(raw)
-	if err != nil {
-		return body, originalModel
-	}
-	slog.Debug("copilot model normalize+mapping",
-		"original", originalModel,
-		"normalized", normalized)
-	return newBody, originalModel
-}
-
 // Anthropic /v1/messages gateway
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -756,13 +642,19 @@ func (s *CopilotGatewayService) ForwardMessages(
 	isStream := detectAnthropicStream(anthropicBody)
 
 	// Translate Anthropic request → OpenAI format.
-	openAIBody, err := translateAnthropicToOpenAI(anthropicBody, account.GetModelMapping())
+	openAIBody, err := translateAnthropicToOpenAI(anthropicBody, nil)
 	if err != nil {
 		return nil, fmt.Errorf("copilot messages: translate request: %w", err)
 	}
 
-	// Apply model mapping (operates on the already-translated OpenAI body).
-	openAIBody, model := s.applyModelMapping(openAIBody, account)
+	// Extract model name for logging.
+	model := extractModelFromBody(openAIBody)
+
+	// DEBUG: log the full translated request body to diagnose 400 Bad Request
+	slog.Debug("copilot messages translated openai body",
+		"account_id", account.ID,
+		"model", model,
+		"body", string(openAIBody))
 
 	// Get Copilot API token.
 	token, err := s.tokenProvider.GetAccessToken(ctx, account)
@@ -778,6 +670,11 @@ func (s *CopilotGatewayService) ForwardMessages(
 		baseURL = copilot.ChatBaseURLForPlan(planType)
 	}
 
+	// Determine X-Initiator: "agent" when the conversation already has assistant
+	// or tool turns (multi-turn / sub-agent call), "user" for the first turn.
+	// This mirrors the TypeScript copilot-api reference implementation.
+	initiator := copilotInitiator(openAIBody)
+
 	// Build upstream request to Copilot /chat/completions.
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(openAIBody))
 	if err != nil {
@@ -785,7 +682,7 @@ func (s *CopilotGatewayService) ForwardMessages(
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	for k, vals := range copilot.CopilotHeaders("user", false) {
+	for k, vals := range copilot.CopilotHeaders(initiator, false) {
 		for _, v := range vals {
 			req.Header.Set(k, v)
 		}
@@ -1109,6 +1006,131 @@ func (s *CopilotGatewayService) FetchAllCopilotQuotas(
 	}
 	wg.Wait()
 	return results, nil
+}
+
+// mergeConsecutiveSameRoleMessagesInOpenAIBody parses an OpenAI Chat Completions
+// request body, merges adjacent messages that share the same "user" or "system"
+// role, and returns the re-serialised body.
+//
+// Claude Code in OpenAI-mode (via cc-switch) sends consecutive user messages
+// (e.g. <available-deferred-tools> injection + actual user message).  The
+// Copilot API rejects adjacent same-role messages with 400 Bad Request.
+// This function normalises the body before forwarding, matching the behaviour
+// already applied on the Anthropic path via mergeConsecutiveSameRoleMessages.
+//
+// If parsing fails the original body is returned unchanged so the upstream
+// error (if any) is forwarded to the caller.
+func mergeConsecutiveSameRoleMessagesInOpenAIBody(body []byte) []byte {
+	var req struct {
+		Messages []struct {
+			Role      string          `json:"role"`
+			Content   json.RawMessage `json:"content"`
+			ToolCalls json.RawMessage `json:"tool_calls,omitempty"`
+		} `json:"messages"`
+	}
+
+	// We want to preserve all other fields (model, stream, temperature …),
+	// so unmarshal into a generic map and only rewrite the messages field.
+	var generic map[string]json.RawMessage
+	if err := json.Unmarshal(body, &generic); err != nil {
+		return body
+	}
+
+	msgsRaw, ok := generic["messages"]
+	if !ok {
+		return body
+	}
+	if err := json.Unmarshal(msgsRaw, &req.Messages); err != nil {
+		return body
+	}
+	if len(req.Messages) == 0 {
+		return body
+	}
+
+	// Build merged messages list.
+	type msg struct {
+		Role      string          `json:"role"`
+		Content   json.RawMessage `json:"content"`
+		ToolCalls json.RawMessage `json:"tool_calls,omitempty"`
+	}
+
+	merged := make([]msg, 0, len(req.Messages))
+	for _, m := range req.Messages {
+		if len(merged) == 0 {
+			merged = append(merged, msg{Role: m.Role, Content: m.Content, ToolCalls: m.ToolCalls})
+			continue
+		}
+		prev := &merged[len(merged)-1]
+
+		// Only merge user/system; never merge assistant/tool messages, and
+		// never merge a message that has tool_calls.
+		canMerge := m.Role == prev.Role &&
+			(m.Role == "user" || m.Role == "system") &&
+			len(m.ToolCalls) == 0 &&
+			len(prev.ToolCalls) == 0
+
+		if !canMerge {
+			merged = append(merged, msg{Role: m.Role, Content: m.Content, ToolCalls: m.ToolCalls})
+			continue
+		}
+
+		// Extract text from both sides and join.
+		prevText := extractTextFromOpenAIContent(prev.Content)
+		curText := extractTextFromOpenAIContent(m.Content)
+		combined := prevText
+		if curText != "" {
+			if combined != "" {
+				combined += "\n\n"
+			}
+			combined += curText
+		}
+		combinedJSON, err := json.Marshal(combined)
+		if err != nil {
+			merged = append(merged, msg{Role: m.Role, Content: m.Content, ToolCalls: m.ToolCalls})
+			continue
+		}
+		prev.Content = combinedJSON
+	}
+
+	mergedJSON, err := json.Marshal(merged)
+	if err != nil {
+		return body
+	}
+	generic["messages"] = mergedJSON
+
+	out, err := json.Marshal(generic)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// extractTextFromOpenAIContent extracts a plain string from an OpenAI message
+// content field, which may be a JSON string or a JSON array of content parts.
+func extractTextFromOpenAIContent(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	// Try plain string.
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	// Try array of content parts: [{"type":"text","text":"..."}].
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &parts); err == nil {
+		var texts []string
+		for _, p := range parts {
+			if p.Type == "text" && p.Text != "" {
+				texts = append(texts, p.Text)
+			}
+		}
+		return strings.Join(texts, "\n\n")
+	}
+	return ""
 }
 
 // planTypeFromString returns a human-readable plan type label.
