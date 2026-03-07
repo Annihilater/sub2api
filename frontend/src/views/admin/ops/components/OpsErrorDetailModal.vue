@@ -1,6 +1,6 @@
 <template>
-  <BaseDialog :show="show" :title="title" width="full" :close-on-click-outside="true" @close="close">
-    <OpsErrorDetailPanel :show="show" :error-id="errorId" :error-type="errorType" />
+  <BaseDialog :show="show" :title="title" width="full" content-class="!h-[88vh]" body-class="!p-0 !overflow-hidden flex flex-col" :close-on-click-outside="true" @close="close">
+    <OpsErrorDetailPanel class="min-h-0 flex-1 overflow-auto" :show="show" :error-id="errorId" :error-type="errorType" />
   </BaseDialog>
 </template>
 

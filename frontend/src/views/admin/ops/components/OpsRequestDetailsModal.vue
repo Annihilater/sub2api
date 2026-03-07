@@ -149,9 +149,9 @@ const kindBadgeClass = (kind: string) => {
 </script>
 
 <template>
-  <BaseDialog :show="modelValue" :title="props.preset.title || t('admin.ops.requestDetails.title')" width="full" @close="close">
+  <BaseDialog :show="modelValue" :title="props.preset.title || t('admin.ops.requestDetails.title')" width="full" content-class="!h-[88vh]" body-class="!p-0 !overflow-hidden flex flex-col" @close="close">
     <template #default>
-      <div class="flex h-full min-h-0 flex-col">
+      <div class="flex min-h-0 flex-1 flex-col p-6">
         <div class="mb-4 flex flex-shrink-0 items-center justify-between">
           <div class="text-xs text-gray-500 dark:text-gray-400">
             {{ t('admin.ops.requestDetails.rangeLabel', { range: rangeLabel }) }}
