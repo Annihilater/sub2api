@@ -1045,22 +1045,41 @@ func (s *CopilotGatewayService) handleMessagesStreamToNonStreamingResponse(
 		if scanErr != nil {
 			slog.Warn("copilot messages stream-to-nonstream scanner error", "error", scanErr)
 		}
-		// Return an Anthropic-format 529 error instead of assembling a response
-		// from incomplete data. Claude Code has built-in backoff retry logic for
-		// overloaded_error (HTTP 529), so the user experience is seamless.
-		c.JSON(529, gin.H{
-			"type": "error",
-			"error": gin.H{
-				"type":    "overloaded_error",
-				"message": "Upstream connection interrupted, please retry.",
-			},
-		})
-		return &CopilotForwardResult{
-			StatusCode:   529,
-			Model:        model,
-			Duration:     time.Since(startTime),
-			FirstTokenMs: firstTokenMs,
-		}, nil
+
+		// If we already accumulated content or tool calls before the stream was
+		// cut (e.g. Copilot's 60-second SSE hard limit), salvage what we have
+		// and return a best-effort response rather than a 529.  This avoids
+		// an infinite retry loop when the model simply takes longer than 60s to
+		// generate — the client gets a (possibly truncated) but usable response.
+		hasContent := contentBuilder.Len() > 0 || len(toolCalls) > 0
+		if hasContent {
+			slog.Warn("copilot messages stream-to-nonstream: salvaging partial response after stream cut",
+				"content_len", contentBuilder.Len(),
+				"tool_calls", len(toolCalls),
+				"scan_err", scanErr)
+			// Fall through to the assembly block below — doneSeen stays false but
+			// we treat the partial data as complete.  Set a synthetic finish_reason
+			// so downstream translation produces a well-formed Anthropic response.
+			if finishReason == "" {
+				finishReason = "end_turn"
+			}
+		} else {
+			// Nothing accumulated at all — we cannot salvage anything useful.
+			// Return an Anthropic-format 529 error so Claude Code retries.
+			c.JSON(529, gin.H{
+				"type": "error",
+				"error": gin.H{
+					"type":    "overloaded_error",
+					"message": "Upstream connection interrupted, please retry.",
+				},
+			})
+			return &CopilotForwardResult{
+				StatusCode:   529,
+				Model:        model,
+				Duration:     time.Since(startTime),
+				FirstTokenMs: firstTokenMs,
+			}, nil
+		}
 	}
 
 	// Build the reconstructed OpenAI non-streaming response.
