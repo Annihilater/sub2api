@@ -1,5 +1,5 @@
 <template>
-  <div class="h-full">
+  <div class="relative h-full">
     <!-- 空状态 -->
     <div
       v-if="!row"
@@ -8,10 +8,19 @@
       {{ emptyText || t('admin.ops.requestDetails.detailPaneEmpty') }}
     </div>
 
-    <!-- 详情内容 -->
-    <div v-else class="space-y-5 p-6">
+    <!-- 错误类型：直接内嵌错误详情面板 -->
+    <OpsErrorDetailPanel
+      v-else-if="row.kind === 'error' && row.error_id"
+      :show="true"
+      :error-id="row.error_id"
+      error-type="request"
+      class="h-full"
+    />
+
+    <!-- 成功类型 / 无 error_id：展示请求摘要 -->
+    <div v-else class="space-y-4 p-6">
       <!-- Request ID -->
-      <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900 col-span-2">
+      <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
         <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.requestDetails.table.requestId') }}</div>
         <div class="mt-1 flex items-center gap-2">
           <span class="flex-1 truncate font-mono text-sm font-medium text-gray-900 dark:text-white" :title="row.request_id || '—'">
@@ -28,15 +37,10 @@
       </div>
 
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <!-- Time -->
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
           <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.requestDetails.table.time') }}</div>
-          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-            {{ formatDateTime(row.created_at) }}
-          </div>
+          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">{{ formatDateTime(row.created_at) }}</div>
         </div>
-
-        <!-- Kind -->
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
           <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.requestDetails.table.kind') }}</div>
           <div class="mt-1">
@@ -45,94 +49,26 @@
             </span>
           </div>
         </div>
-
-        <!-- Platform -->
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
           <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.requestDetails.table.platform') }}</div>
-          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-            {{ (row.platform || '—').toUpperCase() }}
-          </div>
+          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">{{ (row.platform || '—').toUpperCase() }}</div>
         </div>
-
-        <!-- Model -->
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
           <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.requestDetails.table.model') }}</div>
-          <div class="mt-1 truncate text-sm font-medium text-gray-900 dark:text-white" :title="row.model || '—'">
-            {{ row.model || '—' }}
-          </div>
+          <div class="mt-1 truncate text-sm font-medium text-gray-900 dark:text-white" :title="row.model || '—'">{{ row.model || '—' }}</div>
         </div>
-
-        <!-- Duration -->
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
           <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.requestDetails.table.duration') }}</div>
-          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-            {{ typeof row.duration_ms === 'number' ? `${row.duration_ms} ms` : '—' }}
-          </div>
+          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">{{ typeof row.duration_ms === 'number' ? `${row.duration_ms} ms` : '—' }}</div>
         </div>
-
-        <!-- Status -->
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
           <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.requestDetails.table.status') }}</div>
           <div class="mt-1">
-            <span
-              v-if="row.status_code != null"
-              :class="['inline-flex items-center rounded-lg px-2 py-1 text-xs font-black ring-1 ring-inset shadow-sm', statusClass]"
-            >
+            <span v-if="row.status_code != null" :class="['inline-flex items-center rounded-lg px-2 py-1 text-xs font-black ring-1 ring-inset shadow-sm', statusClass]">
               {{ row.status_code }}
             </span>
             <span v-else class="text-sm font-medium text-gray-400">—</span>
           </div>
-        </div>
-
-        <!-- Stream -->
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.requestDetails.detail.stream') }}</div>
-          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-            {{ row.stream != null ? (row.stream ? t('common.yes') : t('common.no')) : '—' }}
-          </div>
-        </div>
-
-        <!-- Group -->
-        <div v-if="row.group_id != null" class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.requestDetails.detail.group') }}</div>
-          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-            {{ row.group_id }}
-          </div>
-        </div>
-
-        <!-- User -->
-        <div v-if="row.user_id != null" class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.requestDetails.detail.user') }}</div>
-          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-            {{ row.user_id }}
-          </div>
-        </div>
-      </div>
-
-      <!-- Error section (only when kind === 'error') -->
-      <div v-if="row.kind === 'error'" class="rounded-xl bg-red-50/60 p-5 dark:bg-red-950/20">
-        <h3 class="text-sm font-black uppercase tracking-wider text-red-800 dark:text-red-300">{{ t('admin.ops.requestDetails.detail.errorInfo') }}</h3>
-        <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div v-if="row.phase" class="rounded-lg bg-white p-3 dark:bg-dark-800">
-            <div class="text-[11px] font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.requestDetails.detail.phase') }}</div>
-            <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">{{ row.phase }}</div>
-          </div>
-          <div v-if="row.severity" class="rounded-lg bg-white p-3 dark:bg-dark-800">
-            <div class="text-[11px] font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.requestDetails.detail.severity') }}</div>
-            <div class="mt-1"><span :class="['rounded px-1.5 py-0.5 text-[10px] font-bold', getSeverityClass(row.severity as any)]">{{ row.severity }}</span></div>
-          </div>
-          <div v-if="row.message" class="sm:col-span-2 rounded-lg bg-white p-3 dark:bg-dark-800">
-            <div class="text-[11px] font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.requestDetails.detail.message') }}</div>
-            <div class="mt-1 break-words text-sm font-medium text-gray-900 dark:text-white">{{ row.message }}</div>
-          </div>
-        </div>
-        <div v-if="row.error_id" class="mt-4">
-          <button
-            class="rounded-lg bg-red-100 px-4 py-2 text-xs font-bold text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50"
-            @click="emit('openErrorDetail', row.error_id!)"
-          >
-            {{ t('admin.ops.requestDetails.viewError') }}
-          </button>
         </div>
       </div>
     </div>
@@ -145,19 +81,15 @@ import { useI18n } from 'vue-i18n'
 import { useClipboard } from '@/composables/useClipboard'
 import { useAppStore } from '@/stores'
 import type { OpsRequestDetail } from '@/api/admin/ops'
-import { getSeverityClass, formatDateTime } from '../utils/opsFormatters'
+import { formatDateTime } from '../utils/opsFormatters'
+import OpsErrorDetailPanel from './OpsErrorDetailPanel.vue'
 
 interface Props {
   row: OpsRequestDetail | null
   emptyText?: string
 }
 
-interface Emits {
-  (e: 'openErrorDetail', errorId: number): void
-}
-
 const props = defineProps<Props>()
-const emit = defineEmits<Emits>()
 
 const { t } = useI18n()
 const appStore = useAppStore()

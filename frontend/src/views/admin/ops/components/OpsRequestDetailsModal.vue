@@ -137,12 +137,6 @@ function selectRow(row: OpsRequestDetail) {
   selectedRow.value = row
 }
 
-function openErrorDetail(errorId: number | null | undefined) {
-  if (!errorId) return
-  close()
-  emit('openErrorDetail', errorId)
-}
-
 const kindBadgeClass = (kind: string) => {
   if (kind === 'error') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
   return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
@@ -278,7 +272,6 @@ const kindBadgeClass = (kind: string) => {
               class="min-h-0 flex-1 overflow-auto"
               :row="selectedRow"
               :empty-text="t('admin.ops.requestDetails.detailPaneEmpty')"
-              @open-error-detail="openErrorDetail"
             />
           </aside>
         </div>
