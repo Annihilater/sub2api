@@ -30,7 +30,6 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(10)
 const selectedErrorId = ref<number | null>(null)
-const detailCollapsedByUser = ref(false)
 
 const q = ref('')
 const statusCode = ref<number | 'other' | null>(null)
@@ -92,13 +91,12 @@ function close() {
 function syncSelectedError() {
   if (!usesSplitDetail.value) {
     selectedErrorId.value = null
-    detailCollapsedByUser.value = false
     return
   }
 
   if (selectedErrorId.value && rows.value.some((row) => row.id === selectedErrorId.value)) return
 
-  if (!detailCollapsedByUser.value && rows.value.length > 0) {
+  if (rows.value.length > 0) {
     selectedErrorId.value = rows.value[0].id
     return
   }
@@ -111,21 +109,14 @@ function openErrorDetail(errorId: number) {
     emit('openErrorDetail', errorId)
     return
   }
-
-  detailCollapsedByUser.value = false
   selectedErrorId.value = errorId
-}
-
-function closeInlineDetail() {
-  selectedErrorId.value = null
-  detailCollapsedByUser.value = true
 }
 
 function handleKeydown(event: KeyboardEvent) {
   if (!props.show || !usesSplitDetail.value || !selectedErrorId.value || event.key !== 'Escape') return
   event.preventDefault()
   event.stopPropagation()
-  closeInlineDetail()
+  selectedErrorId.value = null
 }
 
 async function fetchErrorLogs() {
@@ -178,7 +169,6 @@ async function fetchErrorLogs() {
     errorOwner.value = ''
     viewMode.value = 'errors'
     page.value = 1
-    detailCollapsedByUser.value = false
     selectedErrorId.value = null
     fetchErrorLogs()
   }
@@ -189,7 +179,6 @@ watch(
   (open) => {
     if (!open) {
       selectedErrorId.value = null
-      detailCollapsedByUser.value = false
       return
     }
     page.value = 1
@@ -204,7 +193,6 @@ watch(
   () => {
     if (!props.show) return
     page.value = 1
-    if (usesSplitDetail.value) detailCollapsedByUser.value = false
     fetchErrorLogs()
   }
 )
@@ -235,7 +223,6 @@ watch(
   () => {
     if (!props.show) return
     page.value = 1
-    if (usesSplitDetail.value) detailCollapsedByUser.value = false
     fetchErrorLogs()
   }
 )
@@ -304,7 +291,8 @@ onUnmounted(() => {
 
       <!-- Body -->
       <div class="flex min-h-0 flex-1 flex-col">
-        <div v-if="usesSplitDetail" class="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,1fr)]">
+        <!-- Request errors: 永久保持左右分栏，不随 selectedErrorId 改变布局 -->
+        <div v-if="usesSplitDetail" class="grid min-h-0 flex-1 gap-4 grid-cols-[minmax(0,1.45fr)_minmax(380px,1fr)]">
           <div class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900">
             <div class="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-dark-700">
               <div class="text-xs text-gray-500 dark:text-gray-400">
@@ -326,20 +314,13 @@ onUnmounted(() => {
             />
           </div>
 
+          <!-- 右侧详情面板：常驻，不随 selectedErrorId 展开/收起，保持弹窗尺寸稳定 -->
           <aside class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-gray-50/70 dark:border-dark-700 dark:bg-dark-950/40">
             <div class="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-dark-700">
               <div>
                 <h3 class="text-sm font-bold text-gray-900 dark:text-white">{{ t('admin.ops.errorDetails.detailPaneTitle') }}</h3>
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.ops.errorDetails.detailPaneHint') }}</p>
               </div>
-              <button
-                type="button"
-                class="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-gray-200 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-dark-800 dark:text-gray-200 dark:ring-dark-700 dark:hover:bg-dark-700"
-                :disabled="!selectedErrorId"
-                @click="closeInlineDetail"
-              >
-                {{ t('admin.ops.errorDetails.closeDetail') }}
-              </button>
             </div>
 
             <OpsErrorDetailPanel
