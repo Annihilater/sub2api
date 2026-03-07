@@ -1,6 +1,6 @@
 <template>
   <!-- 相对定位容器，支持 loading overlay 覆盖旧内容（避免闪烁） -->
-  <div class="relative h-full overflow-auto">
+  <div class="relative h-full">
 
     <!-- 空状态：没有选中任何错误 -->
     <div

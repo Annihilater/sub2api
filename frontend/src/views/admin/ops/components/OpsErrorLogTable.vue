@@ -173,7 +173,7 @@
           :total="total"
           :page="page"
           :page-size="pageSize"
-          :page-size-options="[10]"
+          :page-size-options="[10, 20, 50]"
           @update:page="emit('update:page', $event)"
           @update:pageSize="emit('update:pageSize', $event)"
         />
