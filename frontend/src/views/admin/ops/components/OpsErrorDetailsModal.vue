@@ -237,10 +237,17 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <BaseDialog :show="show" :title="modalTitle" width="full" :close-on-escape="!(usesSplitDetail && selectedErrorId)" @close="close">
-    <div class="flex h-full min-h-0 flex-col">
+  <BaseDialog
+    :show="show"
+    :title="modalTitle"
+    width="full"
+    body-class="!p-0 !overflow-hidden flex flex-col"
+    :close-on-escape="!(usesSplitDetail && selectedErrorId)"
+    @close="close"
+  >
+    <div class="flex min-h-0 flex-1 flex-col">
       <!-- Filters -->
-      <div class="mb-4 flex-shrink-0 border-b border-gray-200 pb-4 dark:border-dark-700">
+      <div class="flex-shrink-0 border-b border-gray-200 px-6 py-4 dark:border-dark-700">
         <div class="grid grid-cols-8 gap-2">
           <div class="col-span-2 compact-select">
             <div class="relative group">
@@ -275,8 +282,6 @@ onUnmounted(() => {
             <Select :model-value="errorOwner" :options="ownerSelectOptions" @update:model-value="errorOwner = String($event ?? '')" />
           </div>
 
-
-
           <div class="compact-select">
             <Select :model-value="viewMode" :options="viewModeSelectOptions" @update:model-value="viewMode = $event as any" />
           </div>
@@ -289,12 +294,13 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Body -->
-      <div class="flex min-h-0 flex-1 flex-col">
-        <!-- Request errors: 永久保持左右分栏，不随 selectedErrorId 改变布局 -->
-        <div v-if="usesSplitDetail" class="grid min-h-0 flex-1 gap-4 grid-cols-[minmax(0,1.45fr)_minmax(380px,1fr)]">
+      <!-- Body：填满剩余高度，内部各列自管滚动 -->
+      <div class="flex min-h-0 flex-1 p-6 pt-4">
+        <!-- Request errors: 左右固定分栏 -->
+        <div v-if="usesSplitDetail" class="grid min-h-0 w-full gap-4 grid-cols-[minmax(0,1.45fr)_minmax(380px,1fr)]">
+          <!-- 左列：表格 + 分页，内部自管滚动 -->
           <div class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900">
-            <div class="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-dark-700">
+            <div class="flex-shrink-0 border-b border-gray-200 px-4 py-3 dark:border-dark-700">
               <div class="text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.ops.errorDetails.total') }} {{ total }}
               </div>
@@ -314,17 +320,16 @@ onUnmounted(() => {
             />
           </div>
 
-          <!-- 右侧详情面板：常驻，不随 selectedErrorId 展开/收起，保持弹窗尺寸稳定 -->
+          <!-- 右列：详情面板，内部自管滚动 -->
           <aside class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-gray-50/70 dark:border-dark-700 dark:bg-dark-950/40">
-            <div class="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-dark-700">
-              <div>
-                <h3 class="text-sm font-bold text-gray-900 dark:text-white">{{ t('admin.ops.errorDetails.detailPaneTitle') }}</h3>
-                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.ops.errorDetails.detailPaneHint') }}</p>
-              </div>
+            <div class="flex-shrink-0 border-b border-gray-200 px-4 py-3 dark:border-dark-700">
+              <h3 class="text-sm font-bold text-gray-900 dark:text-white">{{ t('admin.ops.errorDetails.detailPaneTitle') }}</h3>
+              <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.ops.errorDetails.detailPaneHint') }}</p>
             </div>
 
+            <!-- overflow-auto 在 Panel 内部，flex-1 撑满剩余高度 -->
             <OpsErrorDetailPanel
-              class="min-h-0 flex-1"
+              class="min-h-0 flex-1 overflow-auto"
               :show="show"
               :error-id="selectedErrorId"
               :error-type="errorType"
@@ -333,22 +338,24 @@ onUnmounted(() => {
           </aside>
         </div>
 
+        <!-- Upstream errors: 单列布局 -->
         <template v-else>
-          <div class="mb-2 flex-shrink-0 text-xs text-gray-500 dark:text-gray-400">
-            {{ t('admin.ops.errorDetails.total') }} {{ total }}
+          <div class="flex w-full min-h-0 flex-col">
+            <div class="mb-2 flex-shrink-0 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.ops.errorDetails.total') }} {{ total }}
+            </div>
+            <OpsErrorLogTable
+              class="min-h-0 flex-1"
+              :rows="rows"
+              :total="total"
+              :loading="loading"
+              :page="page"
+              :page-size="pageSize"
+              @openErrorDetail="emit('openErrorDetail', $event)"
+              @update:page="page = $event"
+              @update:pageSize="pageSize = $event"
+            />
           </div>
-
-          <OpsErrorLogTable
-            class="min-h-0 flex-1"
-            :rows="rows"
-            :total="total"
-            :loading="loading"
-            :page="page"
-            :page-size="pageSize"
-            @openErrorDetail="emit('openErrorDetail', $event)"
-            @update:page="page = $event"
-            @update:pageSize="pageSize = $event"
-          />
         </template>
       </div>
     </div>

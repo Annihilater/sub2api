@@ -27,7 +27,7 @@
           </div>
 
           <!-- Body -->
-          <div class="modal-body">
+          <div :class="['modal-body', props.bodyClass]">
             <slot></slot>
           </div>
 
@@ -62,6 +62,8 @@ interface Props {
   closeOnEscape?: boolean
   closeOnClickOutside?: boolean
   zIndex?: number
+  /** 覆盖 modal-body 的额外 CSS 类，例如 'overflow-hidden' 用于内部自管滚动的分栏布局 */
+  bodyClass?: string
 }
 
 interface Emits {
@@ -72,7 +74,8 @@ const props = withDefaults(defineProps<Props>(), {
   width: 'normal',
   closeOnEscape: true,
   closeOnClickOutside: false,
-  zIndex: 50
+  zIndex: 50,
+  bodyClass: ''
 })
 
 const emit = defineEmits<Emits>()
