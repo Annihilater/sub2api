@@ -3543,6 +3543,9 @@ export default {
           success: '成功',
           error: '失败'
         },
+        detailPaneTitle: '请求详情',
+        detailPaneHint: '点击左侧列表中的一条查看详情',
+        detailPaneEmpty: '请从左侧选择一条请求查看详情',
         table: {
           time: '时间',
           kind: '类型',
@@ -3552,6 +3555,15 @@ export default {
           status: '状态码',
           requestId: '请求ID',
           actions: '操作'
+        },
+        detail: {
+          stream: '流式',
+          group: '用户组',
+          user: '用户',
+          phase: '阶段',
+          severity: '级别',
+          message: '错误信息',
+          errorInfo: '错误信息'
         }
       },
       alertEvents: {
