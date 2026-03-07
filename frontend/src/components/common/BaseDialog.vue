@@ -11,7 +11,7 @@
         @click.self="handleClose"
       >
         <!-- Modal panel -->
-        <div ref="dialogRef" :class="['modal-content', widthClasses]" @click.stop>
+        <div ref="dialogRef" :class="['modal-content', widthClasses, props.contentClass]" @click.stop>
           <!-- Header -->
           <div class="modal-header">
             <h3 :id="dialogId" class="modal-title">
@@ -64,6 +64,8 @@ interface Props {
   zIndex?: number
   /** 覆盖 modal-body 的额外 CSS 类，例如 'overflow-hidden' 用于内部自管滚动的分栏布局 */
   bodyClass?: string
+  /** 覆盖 modal-content 的额外 CSS 类，例如 'h-[88vh]' 用于固定高度的弹窗 */
+  contentClass?: string
 }
 
 interface Emits {
@@ -75,7 +77,8 @@ const props = withDefaults(defineProps<Props>(), {
   closeOnEscape: true,
   closeOnClickOutside: false,
   zIndex: 50,
-  bodyClass: ''
+  bodyClass: '',
+  contentClass: ''
 })
 
 const emit = defineEmits<Emits>()

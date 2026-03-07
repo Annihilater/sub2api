@@ -241,6 +241,7 @@ onUnmounted(() => {
     :show="show"
     :title="modalTitle"
     width="full"
+    content-class="!h-[88vh]"
     body-class="!p-0 !overflow-hidden flex flex-col"
     :close-on-escape="!(usesSplitDetail && selectedErrorId)"
     @close="close"
