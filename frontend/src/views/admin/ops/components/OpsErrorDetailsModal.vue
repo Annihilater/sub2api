@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
 import OpsErrorLogTable from './OpsErrorLogTable.vue'
 import OpsErrorDetailPanel from './OpsErrorDetailPanel.vue'
 import { opsAPI, type OpsErrorLog } from '@/api/admin/ops'
+import { pushEscape } from '@/composables/useEscapeStack'
 
 interface Props {
   show: boolean
@@ -112,12 +113,27 @@ function openErrorDetail(errorId: number) {
   selectedErrorId.value = errorId
 }
 
-function handleKeydown(event: KeyboardEvent) {
-  if (!props.show || !usesSplitDetail.value || !selectedErrorId.value || event.key !== 'Escape') return
-  event.preventDefault()
-  event.stopPropagation()
-  selectedErrorId.value = null
-}
+// 当 detail 面板打开时，压入一个高于 BaseDialog 的 ESC 层（后 push 先触发）
+// 按 ESC 先关闭 detail，再按一次才关闭整个 modal
+let popDetailEscape: (() => void) | null = null
+
+watch(
+  () => [props.show, selectedErrorId.value] as const,
+  ([show, id]) => {
+    popDetailEscape?.()
+    popDetailEscape = null
+    if (show && usesSplitDetail.value && id != null) {
+      popDetailEscape = pushEscape(() => {
+        selectedErrorId.value = null
+      })
+    }
+  }
+)
+
+onUnmounted(() => {
+  popDetailEscape?.()
+  popDetailEscape = null
+})
 
 async function fetchErrorLogs() {
   if (!props.show) return
@@ -226,14 +242,6 @@ watch(
     fetchErrorLogs()
   }
 )
-
-onMounted(() => {
-  window.addEventListener('keydown', handleKeydown, true)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown, true)
-})
 </script>
 
 <template>
@@ -243,7 +251,6 @@ onUnmounted(() => {
     width="full"
     content-class="!h-[88vh]"
     body-class="!p-0 !overflow-hidden flex flex-col"
-    :close-on-escape="!(usesSplitDetail && selectedErrorId)"
     @close="close"
   >
     <div class="flex min-h-0 flex-1 flex-col">

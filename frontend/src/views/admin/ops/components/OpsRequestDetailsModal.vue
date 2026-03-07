@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Pagination from '@/components/common/Pagination.vue'
@@ -7,6 +7,7 @@ import OpsRequestDetailPanel from './OpsRequestDetailPanel.vue'
 import { useAppStore } from '@/stores'
 import { opsAPI, type OpsRequestDetailsParams, type OpsRequestDetail } from '@/api/admin/ops'
 import { parseTimeRangeMinutes, formatDateTime } from '../utils/opsFormatters'
+import { pushEscape } from '@/composables/useEscapeStack'
 
 export interface OpsRequestDetailsPreset {
   title: string
@@ -41,6 +42,27 @@ const pageSize = ref(10)
 const selectedRow = ref<OpsRequestDetail | null>(null)
 
 const close = () => emit('update:modelValue', false)
+
+// 当 detail 面板有选中行时，压入高优先级 ESC：先关详情，再关 modal
+let popDetailEscape: (() => void) | null = null
+
+watch(
+  () => [props.modelValue, selectedRow.value] as const,
+  ([open, row]) => {
+    popDetailEscape?.()
+    popDetailEscape = null
+    if (open && row != null) {
+      popDetailEscape = pushEscape(() => {
+        selectedRow.value = null
+      })
+    }
+  }
+)
+
+onUnmounted(() => {
+  popDetailEscape?.()
+  popDetailEscape = null
+})
 
 function buildTimeParams(): Pick<OpsRequestDetailsParams, 'start_time' | 'end_time'> {
   const minutes = parseTimeRangeMinutes(props.timeRange)
