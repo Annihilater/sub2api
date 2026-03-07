@@ -15,10 +15,11 @@
     </div>
 
     <div v-else class="space-y-6 p-6">
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
+      <!-- Row 1: Request ID + Time -->
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900 sm:col-span-2">
           <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.requestId') }}</div>
-          <div class="mt-1 break-all font-mono text-sm font-medium text-gray-900 dark:text-white">
+          <div class="mt-1 font-mono text-sm font-medium text-gray-900 dark:text-white truncate" :title="requestId || '—'">
             {{ requestId || '—' }}
           </div>
         </div>
@@ -34,7 +35,7 @@
           <div class="text-xs font-bold uppercase tracking-wider text-gray-400">
             {{ isUpstreamError(detail) ? t('admin.ops.errorDetail.account') : t('admin.ops.errorDetail.user') }}
           </div>
-          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white truncate" :title="isUpstreamError(detail) ? (detail.account_name || String(detail.account_id ?? '—')) : (detail.user_email || String(detail.user_id ?? '—'))">
             <template v-if="isUpstreamError(detail)">
               {{ detail.account_name || (detail.account_id != null ? String(detail.account_id) : '—') }}
             </template>
@@ -53,14 +54,14 @@
 
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
           <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.group') }}</div>
-          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white truncate" :title="detail.group_name || String(detail.group_id ?? '—')">
             {{ detail.group_name || (detail.group_id != null ? String(detail.group_id) : '—') }}
           </div>
         </div>
 
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
           <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.model') }}</div>
-          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+          <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white truncate" :title="detail.model || '—'">
             {{ detail.model || '—' }}
           </div>
         </div>
