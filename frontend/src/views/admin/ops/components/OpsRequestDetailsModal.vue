@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Pagination from '@/components/common/Pagination.vue'
-import { useClipboard } from '@/composables/useClipboard'
+import OpsRequestDetailPanel from './OpsRequestDetailPanel.vue'
 import { useAppStore } from '@/stores'
 import { opsAPI, type OpsRequestDetailsParams, type OpsRequestDetail } from '@/api/admin/ops'
 import { parseTimeRangeMinutes, formatDateTime } from '../utils/opsFormatters'
@@ -32,21 +32,15 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const appStore = useAppStore()
-const { copyToClipboard } = useClipboard()
 
 const loading = ref(false)
 const items = ref<OpsRequestDetail[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(10)
+const selectedRow = ref<OpsRequestDetail | null>(null)
 
 const close = () => emit('update:modelValue', false)
-
-const rangeLabel = computed(() => {
-  const minutes = parseTimeRangeMinutes(props.timeRange)
-  if (minutes >= 60) return t('admin.ops.requestDetails.rangeHours', { n: Math.round(minutes / 60) })
-  return t('admin.ops.requestDetails.rangeMinutes', { n: minutes })
-})
 
 function buildTimeParams(): Pick<OpsRequestDetailsParams, 'start_time' | 'end_time'> {
   const minutes = parseTimeRangeMinutes(props.timeRange)
@@ -56,6 +50,11 @@ function buildTimeParams(): Pick<OpsRequestDetailsParams, 'start_time' | 'end_ti
     start_time: startTime.toISOString(),
     end_time: endTime.toISOString()
   }
+}
+
+function syncSelectedRow() {
+  if (selectedRow.value && items.value.some((r) => r.request_id === selectedRow.value!.request_id)) return
+  selectedRow.value = items.value.length > 0 ? items.value[0] : null
 }
 
 const fetchData = async () => {
@@ -80,11 +79,13 @@ const fetchData = async () => {
     const res = await opsAPI.listRequestDetails(params)
     items.value = res.items || []
     total.value = res.total || 0
+    syncSelectedRow()
   } catch (e: any) {
     console.error('[OpsRequestDetailsModal] Failed to fetch request details', e)
     appStore.showError(e?.message || t('admin.ops.requestDetails.failedToLoad'))
     items.value = []
     total.value = 0
+    selectedRow.value = null
   } finally {
     loading.value = false
   }
@@ -96,7 +97,10 @@ watch(
     if (open) {
       page.value = 1
       pageSize.value = 10
+      selectedRow.value = null
       fetchData()
+    } else {
+      selectedRow.value = null
     }
   }
 )
@@ -129,11 +133,8 @@ function handlePageSizeChange(next: number) {
   fetchData()
 }
 
-async function handleCopyRequestId(requestId: string) {
-  const ok = await copyToClipboard(requestId, t('admin.ops.requestDetails.requestIdCopied'))
-  if (ok) return
-  // `useClipboard` already shows toast on failure; this keeps UX consistent with older ops modal.
-  appStore.showWarning(t('admin.ops.requestDetails.copyFailed'))
+function selectRow(row: OpsRequestDetail) {
+  selectedRow.value = row
 }
 
 function openErrorDetail(errorId: number | null | undefined) {
@@ -149,136 +150,139 @@ const kindBadgeClass = (kind: string) => {
 </script>
 
 <template>
-  <BaseDialog :show="modelValue" :title="props.preset.title || t('admin.ops.requestDetails.title')" width="full" content-class="!h-[88vh]" body-class="!p-0 !overflow-hidden flex flex-col" @close="close">
-    <template #default>
-      <div class="flex min-h-0 flex-1 flex-col p-6">
-        <div class="mb-4 flex flex-shrink-0 items-center justify-between">
+  <BaseDialog
+    :show="modelValue"
+    :title="props.preset.title || t('admin.ops.requestDetails.title')"
+    width="full"
+    content-class="!h-[88vh]"
+    body-class="!p-0 !overflow-hidden flex flex-col"
+    @close="close"
+  >
+    <div class="flex min-h-0 flex-1 flex-col">
+      <!-- Toolbar -->
+      <div class="flex-shrink-0 border-b border-gray-200 px-6 py-3 dark:border-dark-700">
+        <div class="flex items-center justify-between">
           <div class="text-xs text-gray-500 dark:text-gray-400">
-            {{ t('admin.ops.requestDetails.rangeLabel', { range: rangeLabel }) }}
+            {{ t('admin.ops.errorDetails.total') }} {{ total }}
           </div>
-          <button
-            type="button"
-            class="btn btn-secondary btn-sm"
-            @click="fetchData"
-          >
+          <button type="button" class="btn btn-secondary btn-sm" @click="fetchData">
             {{ t('common.refresh') }}
           </button>
         </div>
+      </div>
 
-        <!-- Loading -->
-        <div v-if="loading" class="flex flex-1 items-center justify-center py-16">
-          <div class="flex flex-col items-center gap-3">
-            <svg class="h-8 w-8 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            <span class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('common.loading') }}</span>
-          </div>
-        </div>
+      <!-- Body: 左右分栏 -->
+      <div class="flex min-h-0 flex-1 p-6 pt-4">
+        <div class="grid min-h-0 w-full gap-4 grid-cols-[minmax(0,1.45fr)_minmax(380px,1fr)]">
 
-        <!-- Table -->
-        <div v-else class="flex min-h-0 flex-1 flex-col">
-          <div v-if="items.length === 0" class="rounded-xl border border-dashed border-gray-200 p-10 text-center dark:border-dark-700">
-            <div class="text-sm font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.requestDetails.empty') }}</div>
-            <div class="mt-1 text-xs text-gray-400">{{ t('admin.ops.requestDetails.emptyHint') }}</div>
-          </div>
+          <!-- 左列：列表 + 分页 -->
+          <div class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900">
 
-          <div v-else class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 dark:border-dark-700">
-            <div class="min-h-0 flex-1 overflow-auto">
-              <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
-                <thead class="sticky top-0 z-10 bg-gray-50 dark:bg-dark-900">
-                <tr>
-                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.requestDetails.table.time') }}
-                  </th>
-                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.requestDetails.table.kind') }}
-                  </th>
-                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.requestDetails.table.platform') }}
-                  </th>
-                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.requestDetails.table.model') }}
-                  </th>
-                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.requestDetails.table.duration') }}
-                  </th>
-                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.requestDetails.table.status') }}
-                  </th>
-                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.requestDetails.table.requestId') }}
-                  </th>
-                  <th class="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.requestDetails.table.actions') }}
-                  </th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-800">
-                <tr v-for="(row, idx) in items" :key="idx" class="hover:bg-gray-50 dark:hover:bg-dark-700/50">
-                  <td class="whitespace-nowrap px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
-                    {{ formatDateTime(row.created_at) }}
-                  </td>
-                  <td class="whitespace-nowrap px-4 py-3">
-                    <span class="rounded-full px-2 py-1 text-[10px] font-bold" :class="kindBadgeClass(row.kind)">
-                      {{ row.kind === 'error' ? t('admin.ops.requestDetails.kind.error') : t('admin.ops.requestDetails.kind.success') }}
-                    </span>
-                  </td>
-                  <td class="whitespace-nowrap px-4 py-3 text-xs font-medium text-gray-700 dark:text-gray-200">
-                    {{ (row.platform || 'unknown').toUpperCase() }}
-                  </td>
-                  <td class="max-w-[240px] truncate px-4 py-3 text-xs text-gray-600 dark:text-gray-300" :title="row.model || ''">
-                    {{ row.model || '-' }}
-                  </td>
-                  <td class="whitespace-nowrap px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
-                    {{ typeof row.duration_ms === 'number' ? `${row.duration_ms} ms` : '-' }}
-                  </td>
-                  <td class="whitespace-nowrap px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
-                    {{ row.status_code ?? '-' }}
-                  </td>
-                  <td class="px-4 py-3">
-                    <div v-if="row.request_id" class="flex items-center gap-2">
-                      <span class="max-w-[220px] truncate font-mono text-[11px] text-gray-700 dark:text-gray-200" :title="row.request_id">
-                        {{ row.request_id }}
-                      </span>
-                      <button
-                        class="rounded-md bg-gray-100 px-2 py-1 text-[10px] font-bold text-gray-600 hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
-                        @click="handleCopyRequestId(row.request_id)"
-                      >
-                        {{ t('admin.ops.requestDetails.copy') }}
-                      </button>
-                    </div>
-                    <span v-else class="text-xs text-gray-400">-</span>
-                  </td>
-                  <td class="whitespace-nowrap px-4 py-3 text-right">
-                    <button
-                      v-if="row.kind === 'error' && row.error_id"
-                      class="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/30"
-                      @click="openErrorDetail(row.error_id)"
-                    >
-                      {{ t('admin.ops.requestDetails.viewError') }}
-                    </button>
-                    <span v-else class="text-xs text-gray-400">-</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <!-- Loading -->
+            <div v-if="loading" class="flex flex-1 items-center justify-center py-16">
+              <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-primary-600"></div>
             </div>
 
-            <Pagination
-              :total="total"
-              :page="page"
-              :page-size="pageSize"
-              @update:page="handlePageChange"
-              @update:pageSize="handlePageSizeChange"
-            />
+            <!-- Empty -->
+            <div v-else-if="items.length === 0" class="flex flex-1 items-center justify-center">
+              <div class="px-8 py-12 text-center">
+                <div class="text-sm font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.requestDetails.empty') }}</div>
+                <div class="mt-1 text-xs text-gray-400">{{ t('admin.ops.requestDetails.emptyHint') }}</div>
+              </div>
+            </div>
+
+            <!-- Table -->
+            <template v-else>
+              <div class="min-h-0 flex-1 overflow-auto">
+                <table class="w-full border-separate border-spacing-0">
+                  <thead class="sticky top-0 z-10 bg-gray-50 dark:bg-dark-800">
+                    <tr>
+                      <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
+                        {{ t('admin.ops.requestDetails.table.time') }}
+                      </th>
+                      <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
+                        {{ t('admin.ops.requestDetails.table.kind') }}
+                      </th>
+                      <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
+                        {{ t('admin.ops.requestDetails.table.platform') }}
+                      </th>
+                      <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
+                        {{ t('admin.ops.requestDetails.table.model') }}
+                      </th>
+                      <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
+                        {{ t('admin.ops.requestDetails.table.duration') }}
+                      </th>
+                      <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
+                        {{ t('admin.ops.requestDetails.table.status') }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
+                    <tr
+                      v-for="row in items"
+                      :key="row.request_id"
+                      :class="[
+                        'group cursor-pointer transition-colors hover:bg-gray-50/80 dark:hover:bg-dark-800/50',
+                        selectedRow?.request_id === row.request_id ? 'bg-primary-50/70 dark:bg-primary-900/10' : ''
+                      ]"
+                      @click="selectRow(row)"
+                    >
+                      <td class="whitespace-nowrap px-4 py-2 font-mono text-xs font-medium text-gray-900 dark:text-gray-200">
+                        {{ formatDateTime(row.created_at).split(' ')[1] }}
+                      </td>
+                      <td class="whitespace-nowrap px-4 py-2">
+                        <span class="rounded-full px-2 py-0.5 text-[10px] font-bold" :class="kindBadgeClass(row.kind)">
+                          {{ row.kind === 'error' ? t('admin.ops.requestDetails.kind.error') : t('admin.ops.requestDetails.kind.success') }}
+                        </span>
+                      </td>
+                      <td class="whitespace-nowrap px-4 py-2 text-xs font-medium text-gray-700 dark:text-gray-200">
+                        <span class="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+                          {{ row.platform || '-' }}
+                        </span>
+                      </td>
+                      <td class="px-4 py-2">
+                        <div class="max-w-[120px] truncate font-mono text-[11px] text-gray-700 dark:text-gray-300" :title="row.model || ''">
+                          {{ row.model || '-' }}
+                        </div>
+                      </td>
+                      <td class="whitespace-nowrap px-4 py-2 text-xs text-gray-600 dark:text-gray-300">
+                        {{ typeof row.duration_ms === 'number' ? `${row.duration_ms} ms` : '-' }}
+                      </td>
+                      <td class="whitespace-nowrap px-4 py-2 text-xs text-gray-600 dark:text-gray-300">
+                        {{ row.status_code ?? '-' }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <Pagination
+                v-if="total > 0"
+                :total="total"
+                :page="page"
+                :page-size="pageSize"
+                :page-size-options="[10, 20, 50]"
+                @update:page="handlePageChange"
+                @update:pageSize="handlePageSizeChange"
+              />
+            </template>
           </div>
+
+          <!-- 右列：详情面板 -->
+          <aside class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-gray-50/70 dark:border-dark-700 dark:bg-dark-950/40">
+            <div class="flex-shrink-0 border-b border-gray-200 px-4 py-3 dark:border-dark-700">
+              <h3 class="text-sm font-bold text-gray-900 dark:text-white">{{ t('admin.ops.requestDetails.detailPaneTitle') }}</h3>
+              <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.ops.requestDetails.detailPaneHint') }}</p>
+            </div>
+            <OpsRequestDetailPanel
+              class="min-h-0 flex-1 overflow-auto"
+              :row="selectedRow"
+              :empty-text="t('admin.ops.requestDetails.detailPaneEmpty')"
+              @open-error-detail="openErrorDetail"
+            />
+          </aside>
         </div>
       </div>
-    </template>
+    </div>
   </BaseDialog>
 </template>

@@ -3373,6 +3373,9 @@ export default {
           success: 'SUCCESS',
           error: 'ERROR'
         },
+        detailPaneTitle: 'Request Detail',
+        detailPaneHint: 'Click a row on the left to inspect it',
+        detailPaneEmpty: 'Select a request from the left list to inspect it',
         table: {
           time: 'Time',
           kind: 'Kind',
@@ -3382,6 +3385,15 @@ export default {
           status: 'Status',
           requestId: 'Request ID',
           actions: 'Actions'
+        },
+        detail: {
+          stream: 'Stream',
+          group: 'Group',
+          user: 'User',
+          phase: 'Phase',
+          severity: 'Severity',
+          message: 'Message',
+          errorInfo: 'Error Info'
         }
       },
       alertEvents: {
