@@ -203,6 +203,23 @@ func (h *CopilotGatewayHandler) ChatCompletions(c *gin.Context) {
 			continue
 		}
 
+		// 429 Too Many Requests: rate limited — failover to another account.
+		if result != nil && result.StatusCode == http.StatusTooManyRequests {
+			reqLog.Warn("copilot.rate_limited_failover",
+				zap.Int64("account_id", account.ID),
+				zap.Int("switch_count", switchCount))
+			failedAccountIDs[account.ID] = struct{}{}
+			switchCount++
+			if switchCount >= h.maxAccountSwitches {
+				reqLog.Warn("copilot.failover_exhausted",
+					zap.Int64("account_id", account.ID),
+					zap.Int("switch_count", switchCount))
+				h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "All Copilot accounts are rate limited")
+				return
+			}
+			continue
+		}
+
 		// Handle upstream error responses (non-2xx already forwarded to client by service)
 		if result != nil && result.StatusCode != http.StatusOK {
 			reqLog.Debug("copilot.request_completed_with_error",
@@ -428,6 +445,23 @@ func (h *CopilotGatewayHandler) Responses(c *gin.Context) {
 			continue
 		}
 
+		// 429 Too Many Requests: rate limited — failover to another account.
+		if result != nil && result.StatusCode == http.StatusTooManyRequests {
+			reqLog.Warn("copilot.responses.rate_limited_failover",
+				zap.Int64("account_id", account.ID),
+				zap.Int("switch_count", switchCount))
+			failedAccountIDs[account.ID] = struct{}{}
+			switchCount++
+			if switchCount >= h.maxAccountSwitches {
+				reqLog.Warn("copilot.responses.failover_exhausted",
+					zap.Int64("account_id", account.ID),
+					zap.Int("switch_count", switchCount))
+				h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "All Copilot accounts are rate limited")
+				return
+			}
+			continue
+		}
+
 		if result != nil && result.StatusCode != http.StatusOK {
 			reqLog.Debug("copilot.responses.completed_with_error",
 				zap.Int64("account_id", account.ID),
@@ -647,6 +681,23 @@ func (h *CopilotGatewayHandler) Messages(c *gin.Context) {
 					zap.Int64("account_id", account.ID),
 					zap.Int("switch_count", switchCount))
 				h.anthropicErrorResponse(c, http.StatusBadGateway, "api_error", "Upstream request failed")
+				return
+			}
+			continue
+		}
+
+		// 429 Too Many Requests: rate limited — failover to another account.
+		if result != nil && result.StatusCode == http.StatusTooManyRequests {
+			reqLog.Warn("copilot.messages.rate_limited_failover",
+				zap.Int64("account_id", account.ID),
+				zap.Int("switch_count", switchCount))
+			failedAccountIDs[account.ID] = struct{}{}
+			switchCount++
+			if switchCount >= h.maxAccountSwitches {
+				reqLog.Warn("copilot.messages.failover_exhausted",
+					zap.Int64("account_id", account.ID),
+					zap.Int("switch_count", switchCount))
+				h.anthropicErrorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "All Copilot accounts are rate limited")
 				return
 			}
 			continue

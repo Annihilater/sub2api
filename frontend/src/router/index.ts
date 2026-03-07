@@ -214,6 +214,17 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/connectivity-test',
+    name: 'ConnectivityTest',
+    component: () => import('@/views/user/ConnectivityTestView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Connectivity Test',
+      titleKey: 'connectivityTest.title'
+    }
+  },
+  {
     path: '/custom/:id',
     name: 'CustomPage',
     component: () => import('@/views/user/CustomPageView.vue'),

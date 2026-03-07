@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
 import OpsErrorLogTable from './OpsErrorLogTable.vue'
+import OpsErrorDetailPanel from './OpsErrorDetailPanel.vue'
 import { opsAPI, type OpsErrorLog } from '@/api/admin/ops'
 
 interface Props {
@@ -28,6 +29,8 @@ const rows = ref<OpsErrorLog[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(10)
+const selectedErrorId = ref<number | null>(null)
+const detailCollapsedByUser = ref(false)
 
 const q = ref('')
 const statusCode = ref<number | 'other' | null>(null)
@@ -39,6 +42,8 @@ const viewMode = ref<'errors' | 'excluded' | 'all'>('errors')
 const modalTitle = computed(() => {
   return props.errorType === 'upstream' ? t('admin.ops.errorDetails.upstreamErrors') : t('admin.ops.errorDetails.requestErrors')
 })
+
+const usesSplitDetail = computed(() => props.errorType === 'request')
 
 const statusCodeSelectOptions = computed(() => {
   const codes = [400, 401, 403, 404, 409, 422, 429, 500, 502, 503, 504, 529]
@@ -84,6 +89,45 @@ function close() {
   emit('update:show', false)
 }
 
+function syncSelectedError() {
+  if (!usesSplitDetail.value) {
+    selectedErrorId.value = null
+    detailCollapsedByUser.value = false
+    return
+  }
+
+  if (selectedErrorId.value && rows.value.some((row) => row.id === selectedErrorId.value)) return
+
+  if (!detailCollapsedByUser.value && rows.value.length > 0) {
+    selectedErrorId.value = rows.value[0].id
+    return
+  }
+
+  selectedErrorId.value = null
+}
+
+function openErrorDetail(errorId: number) {
+  if (!usesSplitDetail.value) {
+    emit('openErrorDetail', errorId)
+    return
+  }
+
+  detailCollapsedByUser.value = false
+  selectedErrorId.value = errorId
+}
+
+function closeInlineDetail() {
+  selectedErrorId.value = null
+  detailCollapsedByUser.value = true
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (!props.show || !usesSplitDetail.value || !selectedErrorId.value || event.key !== 'Escape') return
+  event.preventDefault()
+  event.stopPropagation()
+  closeInlineDetail()
+}
+
 async function fetchErrorLogs() {
   if (!props.show) return
 
@@ -116,10 +160,12 @@ async function fetchErrorLogs() {
       : await opsAPI.listRequestErrors(params)
     rows.value = res.items || []
     total.value = res.total || 0
+    syncSelectedError()
   } catch (err) {
     console.error('[OpsErrorDetailsModal] Failed to fetch error logs', err)
     rows.value = []
     total.value = 0
+    selectedErrorId.value = null
   } finally {
     loading.value = false
   }
@@ -132,6 +178,8 @@ async function fetchErrorLogs() {
     errorOwner.value = ''
     viewMode.value = 'errors'
     page.value = 1
+    detailCollapsedByUser.value = false
+    selectedErrorId.value = null
     fetchErrorLogs()
   }
 
@@ -139,11 +187,16 @@ async function fetchErrorLogs() {
 watch(
   () => props.show,
   (open) => {
-    if (!open) return
+    if (!open) {
+      selectedErrorId.value = null
+      detailCollapsedByUser.value = false
+      return
+    }
     page.value = 1
     pageSize.value = 10
     resetFilters()
-  }
+  },
+  { immediate: true }
 )
 
 watch(
@@ -151,6 +204,7 @@ watch(
   () => {
     if (!props.show) return
     page.value = 1
+    if (usesSplitDetail.value) detailCollapsedByUser.value = false
     fetchErrorLogs()
   }
 )
@@ -181,13 +235,22 @@ watch(
   () => {
     if (!props.show) return
     page.value = 1
+    if (usesSplitDetail.value) detailCollapsedByUser.value = false
     fetchErrorLogs()
   }
 )
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeydown, true)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown, true)
+})
 </script>
 
 <template>
-  <BaseDialog :show="show" :title="modalTitle" width="full" @close="close">
+  <BaseDialog :show="show" :title="modalTitle" width="full" :close-on-escape="!(usesSplitDetail && selectedErrorId)" @close="close">
     <div class="flex h-full min-h-0 flex-col">
       <!-- Filters -->
       <div class="mb-4 flex-shrink-0 border-b border-gray-200 pb-4 dark:border-dark-700">
@@ -241,9 +304,58 @@ watch(
 
       <!-- Body -->
       <div class="flex min-h-0 flex-1 flex-col">
-        <div class="mb-2 flex-shrink-0 text-xs text-gray-500 dark:text-gray-400">
-          {{ t('admin.ops.errorDetails.total') }} {{ total }}
+        <div v-if="usesSplitDetail" class="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,1fr)]">
+          <div class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900">
+            <div class="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-dark-700">
+              <div class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.ops.errorDetails.total') }} {{ total }}
+              </div>
+            </div>
+
+            <OpsErrorLogTable
+              class="min-h-0 flex-1"
+              :rows="rows"
+              :total="total"
+              :loading="loading"
+              :page="page"
+              :page-size="pageSize"
+              :selected-id="selectedErrorId"
+              @openErrorDetail="openErrorDetail"
+              @update:page="page = $event"
+              @update:pageSize="pageSize = $event"
+            />
+          </div>
+
+          <aside class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-gray-50/70 dark:border-dark-700 dark:bg-dark-950/40">
+            <div class="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-dark-700">
+              <div>
+                <h3 class="text-sm font-bold text-gray-900 dark:text-white">{{ t('admin.ops.errorDetails.detailPaneTitle') }}</h3>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.ops.errorDetails.detailPaneHint') }}</p>
+              </div>
+              <button
+                type="button"
+                class="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-gray-200 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-dark-800 dark:text-gray-200 dark:ring-dark-700 dark:hover:bg-dark-700"
+                :disabled="!selectedErrorId"
+                @click="closeInlineDetail"
+              >
+                {{ t('admin.ops.errorDetails.closeDetail') }}
+              </button>
+            </div>
+
+            <OpsErrorDetailPanel
+              class="min-h-0 flex-1"
+              :show="show"
+              :error-id="selectedErrorId"
+              :error-type="errorType"
+              :empty-text="t('admin.ops.errorDetails.detailPaneEmpty')"
+            />
+          </aside>
         </div>
+
+        <template v-else>
+          <div class="mb-2 flex-shrink-0 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.ops.errorDetails.total') }} {{ total }}
+          </div>
 
           <OpsErrorLogTable
             class="min-h-0 flex-1"
@@ -253,11 +365,10 @@ watch(
             :page="page"
             :page-size="pageSize"
             @openErrorDetail="emit('openErrorDetail', $event)"
-
             @update:page="page = $event"
             @update:pageSize="pageSize = $event"
           />
-
+        </template>
       </div>
     </div>
   </BaseDialog>

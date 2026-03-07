@@ -247,7 +247,7 @@ func TestCopilotGatewayService_HandleErrorResponse(t *testing.T) {
 		}
 	})
 
-	t.Run("429 forwards error", func(t *testing.T) {
+	t.Run("429 signals failover without writing to client", func(t *testing.T) {
 		svc := &CopilotGatewayService{tokenProvider: NewCopilotTokenProvider()}
 
 		errBody := `{"error":{"message":"Rate limited"}}`
@@ -265,11 +265,16 @@ func TestCopilotGatewayService_HandleErrorResponse(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
+		// 429 must NOT be written to the client — handler loop needs to failover.
 		if result.StatusCode != http.StatusTooManyRequests {
 			t.Errorf("StatusCode = %d, want %d", result.StatusCode, http.StatusTooManyRequests)
 		}
-		if w.Code != http.StatusTooManyRequests {
-			t.Errorf("response code = %d, want %d", w.Code, http.StatusTooManyRequests)
+		// Default recorder code is 200 (nothing written).
+		if w.Code != http.StatusOK {
+			t.Errorf("response code = %d, want 200 (no write to client for 429)", w.Code)
+		}
+		if w.Body.Len() != 0 {
+			t.Errorf("response body should be empty for 429, got: %s", w.Body.String())
 		}
 	})
 }
@@ -297,6 +302,7 @@ func TestCopilotGatewayService_HandleStreamingResponse(t *testing.T) {
 
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
 
 		result, err := svc.handleStreamingResponse(c, resp, "gpt-4o", time.Now())
 		if err != nil {
