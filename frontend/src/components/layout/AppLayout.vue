@@ -45,11 +45,9 @@ const { replayTour } = useOnboardingTour({
 
 const onboardingStore = useOnboardingStore()
 
-// 最低优先级的 ESC：无弹窗时折叠/展开侧边栏（仅在展开状态时响应）
+// 最低优先级的 ESC：无弹窗时折叠/展开侧边栏
 const popSidebarEscape = pushEscape(() => {
-  if (!sidebarCollapsed.value) {
-    appStore.toggleSidebar()
-  }
+  appStore.toggleSidebar()
 })
 
 onMounted(() => {
