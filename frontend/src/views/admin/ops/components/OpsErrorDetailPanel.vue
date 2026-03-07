@@ -1,20 +1,25 @@
 <template>
-  <div class="h-full overflow-auto">
-    <div v-if="loading" class="flex min-h-[240px] items-center justify-center py-16">
+  <!-- 相对定位容器，支持 loading overlay 覆盖旧内容（避免闪烁） -->
+  <div class="relative h-full overflow-auto">
+
+    <!-- 空状态：没有选中任何错误 -->
+    <div
+      v-if="!detail && !loading"
+      class="flex min-h-[240px] items-center justify-center px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400"
+    >
+      {{ resolvedEmptyText }}
+    </div>
+
+    <!-- 初次加载骨架（detail 为 null 且 loading 时） -->
+    <div v-else-if="!detail && loading" class="flex min-h-[240px] items-center justify-center py-16">
       <div class="flex flex-col items-center gap-3">
         <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-primary-600"></div>
         <div class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('admin.ops.errorDetail.loading') }}</div>
       </div>
     </div>
 
-    <div
-      v-else-if="!detail"
-      class="flex min-h-[240px] items-center justify-center px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400"
-    >
-      {{ resolvedEmptyText }}
-    </div>
-
-    <div v-else class="space-y-6 p-6">
+    <!-- 详情内容（有 detail 时始终渲染，切换时保留旧内容） -->
+    <div v-else-if="detail" class="space-y-6 p-6">
       <!-- Row 1: Request ID + Time -->
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900 sm:col-span-2">
@@ -157,6 +162,16 @@
         </div>
       </div>
     </div>
+
+    <!-- Loading overlay：切换条目时覆盖旧内容，而非清空（消除闪烁） -->
+    <Transition name="panel-fade">
+      <div
+        v-if="loading && detail"
+        class="absolute inset-0 flex items-center justify-center bg-white/60 dark:bg-dark-950/60 backdrop-blur-[2px]"
+      >
+        <div class="h-6 w-6 animate-spin rounded-full border-b-2 border-primary-600"></div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -242,6 +257,7 @@ function prettyJSON(raw?: string): string {
 
 async function fetchDetail(id: number) {
   loading.value = true
+  // 注意：不在这里清空 detail，保留旧数据用于 overlay 覆盖显示，避免闪烁
   try {
     const kind = props.errorType || (detail.value?.phase === 'upstream' ? 'upstream' : 'request')
     const d = kind === 'upstream' ? await opsAPI.getUpstreamErrorDetail(id) : await opsAPI.getRequestErrorDetail(id)
@@ -258,6 +274,7 @@ watch(
   () => [props.show, props.errorId] as const,
   ([show, id]) => {
     if (!show) {
+      // 弹窗关闭时才真正清空，下次打开重新加载
       detail.value = null
       correlatedUpstream.value = []
       correlatedUpstreamLoading.value = false
@@ -274,6 +291,7 @@ watch(
       return
     }
 
+    // errorId 变为 null（用户关闭右侧面板）
     detail.value = null
     correlatedUpstream.value = []
     correlatedUpstreamLoading.value = false
@@ -289,3 +307,14 @@ const statusClass = computed(() => {
   return 'bg-gray-50 text-gray-700 ring-gray-600/20 dark:bg-gray-900/30 dark:text-gray-400 dark:ring-gray-500/30'
 })
 </script>
+
+<style scoped>
+.panel-fade-enter-active,
+.panel-fade-leave-active {
+  transition: opacity 120ms ease;
+}
+.panel-fade-enter-from,
+.panel-fade-leave-to {
+  opacity: 0;
+}
+</style>
