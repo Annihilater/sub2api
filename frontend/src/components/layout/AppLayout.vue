@@ -24,13 +24,14 @@
 
 <script setup lang="ts">
 import '@/styles/onboarding.css'
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useAppStore } from '@/stores'
 import { useAuthStore } from '@/stores/auth'
 import { useOnboardingTour } from '@/composables/useOnboardingTour'
 import { useOnboardingStore } from '@/stores/onboarding'
 import AppSidebar from './AppSidebar.vue'
 import AppHeader from './AppHeader.vue'
+import { pushEscape } from '@/composables/useEscapeStack'
 
 const appStore = useAppStore()
 const authStore = useAuthStore()
@@ -44,8 +45,19 @@ const { replayTour } = useOnboardingTour({
 
 const onboardingStore = useOnboardingStore()
 
+// 最低优先级的 ESC：无弹窗时折叠/展开侧边栏（仅在展开状态时响应）
+const popSidebarEscape = pushEscape(() => {
+  if (!sidebarCollapsed.value) {
+    appStore.toggleSidebar()
+  }
+})
+
 onMounted(() => {
   onboardingStore.setReplayCallback(replayTour)
+})
+
+onUnmounted(() => {
+  popSidebarEscape()
 })
 
 defineExpose({ replayTour })

@@ -42,8 +42,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch, onMounted, onUnmounted, ref, nextTick } from 'vue'
+import { computed, watch, onUnmounted, ref, nextTick } from 'vue'
 import Icon from '@/components/icons/Icon.vue'
+import { pushEscape } from '@/composables/useEscapeStack'
 
 // 生成唯一ID以避免多个对话框时ID冲突
 let dialogIdCounter = 0
@@ -108,13 +109,9 @@ const handleClose = () => {
   }
 }
 
-const handleEscape = (event: KeyboardEvent) => {
-  if (props.show && props.closeOnEscape && event.key === 'Escape') {
-    emit('close')
-  }
-}
+// ESC 处理：通过 escape stack，确保只有最顶层弹窗响应
+let popEscape: (() => void) | null = null
 
-// Prevent body scroll when modal is open and manage focus
 watch(
   () => props.show,
   async (isOpen) => {
@@ -123,6 +120,11 @@ watch(
       previousActiveElement = document.activeElement as HTMLElement
       // 使用CSS类而不是直接操作style,更易于管理多个对话框
       document.body.classList.add('modal-open')
+
+      // 注册 ESC 回调（仅在 closeOnEscape 时）
+      if (props.closeOnEscape) {
+        popEscape = pushEscape(() => emit('close'))
+      }
 
       // 等待DOM更新后设置焦点到对话框
       await nextTick()
@@ -134,6 +136,9 @@ watch(
       }
     } else {
       document.body.classList.remove('modal-open')
+      // 注销 ESC 回调
+      popEscape?.()
+      popEscape = null
       // 恢复之前的焦点
       if (previousActiveElement && typeof previousActiveElement.focus === 'function') {
         previousActiveElement.focus()
@@ -144,13 +149,9 @@ watch(
   { immediate: true }
 )
 
-onMounted(() => {
-  document.addEventListener('keydown', handleEscape)
-})
-
 onUnmounted(() => {
-  document.removeEventListener('keydown', handleEscape)
-  // 确保组件卸载时移除滚动锁定
+  popEscape?.()
+  popEscape = null
   document.body.classList.remove('modal-open')
 })
 </script>
