@@ -1025,8 +1025,25 @@ func (s *CopilotGatewayService) handleMessagesStreamToNonStreamingResponse(
 	// scanner.Err() == "unexpected EOF" even though the stream was fully
 	// consumed.  We must not treat that as an error.
 	if !doneSeen {
-		if err := scanner.Err(); err != nil {
-			slog.Warn("copilot messages stream-to-nonstream scanner error", "error", err)
+		scanErr := scanner.Err()
+
+		// If the client's request context was cancelled (client disconnected or
+		// its own timeout fired), there is no point writing a response — the
+		// client is gone.  Return immediately without touching c.Writer.
+		if c.Request.Context().Err() != nil || scanErr == context.Canceled {
+			slog.Debug("copilot messages stream-to-nonstream: client disconnected, aborting",
+				"scan_err", scanErr,
+				"ctx_err", c.Request.Context().Err())
+			return &CopilotForwardResult{
+				StatusCode:   499, // Client Closed Request (nginx convention)
+				Model:        model,
+				Duration:     time.Since(startTime),
+				FirstTokenMs: firstTokenMs,
+			}, nil
+		}
+
+		if scanErr != nil {
+			slog.Warn("copilot messages stream-to-nonstream scanner error", "error", scanErr)
 		}
 		// Return an Anthropic-format 529 error instead of assembling a response
 		// from incomplete data. Claude Code has built-in backoff retry logic for
